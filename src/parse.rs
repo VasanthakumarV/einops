@@ -16,7 +16,8 @@ struct ParsedExpression {
     has_ellipsis: bool,
     has_ellipsis_parenthesized: bool,
     has_non_unitary_anonymous_axes: bool,
-    identifiers: HashSet<String>,
+    identifiers_named: HashSet<String>,
+    identifiers_anonymous: Vec<usize>,
     composition: Vec<Vec<Axis>>,
 }
 
@@ -28,7 +29,7 @@ impl ParsedExpression {
     ) -> Result<(), EinopsError> {
         let current_ident = match current_ident.as_ref() {
             Some(value) => {
-                if self.identifiers.contains(value.as_str()) {
+                if self.identifiers_named.contains(value.as_str()) {
                     return Err(EinopsError::Parse(
                         "indexing expression contains duplicate dimension".to_string(),
                     ));
@@ -39,7 +40,7 @@ impl ParsedExpression {
         };
 
         if current_ident == &ELLIPSIS {
-            self.identifiers.insert(ELLIPSIS.to_string());
+            self.identifiers_named.insert(ELLIPSIS.to_string());
             match bracket_group.as_mut() {
                 Some(value) => {
                     value.push(Axis::Named(ELLIPSIS.to_string()));
@@ -61,7 +62,7 @@ impl ParsedExpression {
                     return Ok(());
                 }
                 Ok(size) => {
-                    self.identifiers.insert(current_ident.clone());
+                    self.identifiers_anonymous.push(size);
                     self.has_non_unitary_anonymous_axes = true;
                     match bracket_group.as_mut() {
                         Some(value) => value.push(Axis::Anonymous(size)),
@@ -77,7 +78,7 @@ impl ParsedExpression {
                         )));
                     }
 
-                    self.identifiers.insert(current_ident.clone());
+                    self.identifiers_named.insert(current_ident.clone());
                     match bracket_group.as_mut() {
                         Some(value) => value.push(Axis::Named(current_ident.clone())),
                         None => self
@@ -197,11 +198,12 @@ mod tests {
                     has_ellipsis: false,
                     has_ellipsis_parenthesized: false,
                     has_non_unitary_anonymous_axes: false,
-                    identifiers: ["a1", "b1", "c1", "d1"]
+                    identifiers_named: ["a1", "b1", "c1", "d1"]
                         .iter()
                         .cloned()
                         .map(String::from)
                         .collect(),
+                    identifiers_anonymous: vec![],
                     composition: vec![
                         vec![Axis::Named("a1".to_string())],
                         vec![Axis::Named("b1".to_string())],
@@ -217,7 +219,8 @@ mod tests {
                     has_ellipsis: false,
                     has_ellipsis_parenthesized: false,
                     has_non_unitary_anonymous_axes: false,
-                    identifiers: HashSet::new(),
+                    identifiers_named: HashSet::new(),
+                    identifiers_anonymous: vec![],
                     composition: vec![vec![], vec![], vec![], vec![]],
                 },
             ),
@@ -228,7 +231,8 @@ mod tests {
                     has_ellipsis: false,
                     has_ellipsis_parenthesized: false,
                     has_non_unitary_anonymous_axes: false,
-                    identifiers: HashSet::new(),
+                    identifiers_named: HashSet::new(),
+                    identifiers_anonymous: vec![],
                     composition: vec![vec![], vec![], vec![], vec![]],
                 },
             ),
@@ -239,7 +243,8 @@ mod tests {
                     has_ellipsis: false,
                     has_ellipsis_parenthesized: false,
                     has_non_unitary_anonymous_axes: true,
-                    identifiers: ["3", "4", "5"].iter().cloned().map(String::from).collect(),
+                    identifiers_named: HashSet::new(),
+                    identifiers_anonymous: vec![5, 3, 4],
                     composition: vec![
                         vec![Axis::Anonymous(5)],
                         vec![Axis::Anonymous(3), Axis::Anonymous(4)],
@@ -253,7 +258,8 @@ mod tests {
                     has_ellipsis: false,
                     has_ellipsis_parenthesized: false,
                     has_non_unitary_anonymous_axes: true,
-                    identifiers: ["4", "5"].iter().cloned().map(String::from).collect(),
+                    identifiers_named: HashSet::new(),
+                    identifiers_anonymous: vec![5, 4],
                     composition: vec![
                         vec![Axis::Anonymous(5)],
                         vec![],
@@ -269,11 +275,12 @@ mod tests {
                     has_ellipsis: true,
                     has_ellipsis_parenthesized: false,
                     has_non_unitary_anonymous_axes: true,
-                    identifiers: ["name1", ELLIPSIS, "a1", "name2", "12", "14"]
+                    identifiers_named: ["name1", ELLIPSIS, "a1", "name2"]
                         .iter()
                         .cloned()
                         .map(String::from)
                         .collect(),
+                    identifiers_anonymous: vec![12, 14],
                     composition: vec![
                         vec![Axis::Named("name1".to_string())],
                         vec![Axis::Named(ELLIPSIS.to_string())],
@@ -290,11 +297,12 @@ mod tests {
                     has_ellipsis: true,
                     has_ellipsis_parenthesized: true,
                     has_non_unitary_anonymous_axes: true,
-                    identifiers: ["name1", ELLIPSIS, "a1", "name2", "12", "14"]
+                    identifiers_named: ["name1", ELLIPSIS, "a1", "name2"]
                         .iter()
                         .cloned()
                         .map(String::from)
                         .collect(),
+                    identifiers_anonymous: vec![12, 14],
                     composition: vec![
                         vec![
                             Axis::Named("name1".to_string()),
@@ -314,11 +322,12 @@ mod tests {
                     has_ellipsis: true,
                     has_ellipsis_parenthesized: true,
                     has_non_unitary_anonymous_axes: true,
-                    identifiers: ["name1", ELLIPSIS, "a1", "name2", "12", "14"]
+                    identifiers_named: ["name1", ELLIPSIS, "a1", "name2"]
                         .iter()
                         .cloned()
                         .map(String::from)
                         .collect(),
+                    identifiers_anonymous: vec![12, 12, 14],
                     composition: vec![
                         vec![
                             Axis::Named("name1".to_string()),
