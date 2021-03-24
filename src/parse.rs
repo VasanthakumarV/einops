@@ -99,6 +99,7 @@ impl ParsedExpression {
                 Some("axis name should not start or end with underscore"),
             );
         }
+
         return (true, None);
     }
 
@@ -116,6 +117,7 @@ impl ParsedExpression {
                     "expression may contain dots only inside ellipsis (...)".to_string(),
                 ));
             }
+
             let count = expression
                 .matches("...")
                 .collect::<Vec<&str>>()
@@ -127,7 +129,9 @@ impl ParsedExpression {
                         .to_string(),
                 ));
             }
+
             expression = expression.replace("...", &ELLIPSIS);
+
             parsed_expression.has_ellipsis = true;
         }
 
@@ -178,6 +182,7 @@ impl ParsedExpression {
                 expression
             )));
         }
+
         parsed_expression.add_axis_name(&current_ident, &mut bracket_group)?;
 
         Ok(parsed_expression)
@@ -189,7 +194,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {
+    fn invalid_expressions() {
+        let tests = vec![
+            ParsedExpression::new("... a b c d ..."),
+            ParsedExpression::new("... a b c (d ...)"),
+            ParsedExpression::new("(... a) b c (d ...)"),
+            ParsedExpression::new("(a)) b c (d ...)"),
+            ParsedExpression::new("(a b c (d ...)"),
+            ParsedExpression::new("(a) (()) b c (d ...)"),
+            ParsedExpression::new("(a) ((b c) (d ...)"),
+        ];
+
+        for output in tests {
+            assert!(output.is_err());
+        }
+    }
+
+    #[test]
+    fn parse_expressions() {
         let tests = vec![
             // #1
             (
