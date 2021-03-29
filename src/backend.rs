@@ -1,6 +1,7 @@
-//#[cfg(feature = "torch")]
+#[cfg(feature = "torch")]
 mod torch;
 
+#[derive(Copy, Clone)]
 pub enum Operation {
     Min,
     Max,
@@ -10,9 +11,9 @@ pub enum Operation {
 }
 
 pub trait Backend {
-    fn shape(&self) -> Vec<isize>;
-    fn reshape(&self, shape: &[isize]) -> Self;
-    fn transpose(&self, axes: &[isize]) -> Self;
-    fn reduce(&self, operation: Operation, axes: &[isize]) -> Self;
-    fn add_axes(&self, naxes: usize, pos2len: &[(usize, isize)]) -> Self;
+    fn shape(&self) -> Vec<usize>;
+    fn reshape(&self, shape: &[usize]) -> Self;
+    fn transpose(&self, axes: &[usize]) -> Self;
+    fn reduce(&self, operation: Operation, axes: &[usize]) -> Self;
+    fn add_axes(&self, naxes: usize, pos2len: &[(usize, usize)]) -> Self;
 }

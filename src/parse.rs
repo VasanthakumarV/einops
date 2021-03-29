@@ -3,22 +3,22 @@ use std::str::FromStr;
 
 use crate::error::EinopsError;
 
-const ELLIPSIS: &str = "…";
+pub const ELLIPSIS: &str = "…";
 
 #[derive(Debug, PartialEq)]
-enum Axis {
+pub enum Axis {
     Anonymous(usize),
     Named(String),
 }
 
 #[derive(Default, Debug, PartialEq)]
-struct ParsedExpression {
-    has_ellipsis: bool,
-    has_ellipsis_parenthesized: bool,
-    has_non_unitary_anonymous_axes: bool,
-    identifiers_named: HashSet<String>,
+pub struct ParsedExpression {
+    pub has_ellipsis: bool,
+    pub has_ellipsis_parenthesized: bool,
+    pub has_non_unitary_anonymous_axes: bool,
+    pub identifiers_named: HashSet<String>,
     identifiers_anonymous: Vec<usize>,
-    composition: Vec<Vec<Axis>>,
+    pub composition: Vec<Vec<Axis>>,
 }
 
 impl ParsedExpression {
@@ -103,7 +103,7 @@ impl ParsedExpression {
         return (true, None);
     }
 
-    fn new(expression: &str) -> Result<Self, EinopsError> {
+    pub fn new(expression: &str) -> Result<Self, EinopsError> {
         let mut expression = expression.to_string();
 
         let mut parsed_expression = Self::default();

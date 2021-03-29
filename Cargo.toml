@@ -11,4 +11,5 @@ torch = ["tch"]
 
 [dependencies]
 thiserror = "1.0"
+cached = "0.23"
 tch = { version = "0.3", optional = true }
