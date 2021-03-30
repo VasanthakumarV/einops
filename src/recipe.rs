@@ -52,7 +52,7 @@ impl TransformRecipe {
                     .symmetric_difference(&right.identifiers_named)
                     .collect();
 
-                if difference.len() > 0 {
+                if !difference.is_empty() {
                     return Err(EinopsError::Pattern(format!(
                         "identifiers only on one side of the expression (should be on both): {:?}",
                         difference
@@ -64,7 +64,7 @@ impl TransformRecipe {
                     .identifiers_named
                     .difference(&right.identifiers_named)
                     .collect();
-                if difference.len() > 0 {
+                if !difference.is_empty() {
                     return Err(EinopsError::InvalidInput(format!(
                         "unexpected identifiers on the left side of repeat: {:?}",
                         difference
@@ -79,7 +79,7 @@ impl TransformRecipe {
                 }
                 let axes_without_size: HashSet<_> =
                     right.identifiers_named.difference(&right_side).collect();
-                if axes_without_size.len() > 0 {
+                if !axes_without_size.is_empty() {
                     return Err(EinopsError::InvalidInput(format!(
                         "specify sizes for new axes in repeat: {:?}",
                         axes_without_size
@@ -91,7 +91,7 @@ impl TransformRecipe {
                     .identifiers_named
                     .difference(&left.identifiers_named)
                     .collect();
-                if difference.len() > 0 {
+                if !difference.is_empty() {
                     return Err(EinopsError::InvalidInput(format!(
                         "unexpected identifiers on the right side of reduce: {:?}",
                         difference
@@ -116,9 +116,12 @@ impl TransformRecipe {
                 }
                 Axis::Anonymous(size) => {
                     let name = size.to_string();
-                    if !axes_len_pos.contains_key(&name) {
-                        let _ = axes_len_pos.insert(name, (Some(*size), axes_len_pos.len()));
-                    }
+                    let mut len = 0;
+
+                    axes_len_pos.entry(name).or_insert_with(|| {
+                        len += 1;
+                        (Some(*size), len - 1)
+                    });
                 }
             }
         }
@@ -145,7 +148,7 @@ impl TransformRecipe {
                 None
             })
             .collect();
-        reduced_axes.sort();
+        reduced_axes.sort_unstable();
 
         let axes_known_unknown: Vec<(Vec<usize>, Vec<usize>)> = left
             .composition
@@ -205,7 +208,7 @@ impl TransformRecipe {
                             .insert(name.clone(), axis_pos_after_reduction.len());
                     }
                 }
-                Axis::Anonymous(_) => return,
+                Axis::Anonymous(_) => {}
             });
         let axes_permutation: Vec<usize> = right
             .composition
@@ -270,12 +273,9 @@ impl TransformRecipe {
 
     pub(crate) fn apply<T: Backend>(&self, tensor: T) -> Result<T, EinopsError> {
         let (init_shape, added_axes, final_shape) = self.reconstruct_from_shape(tensor.shape())?;
-        //let (init_shape, reduced_axes, axes_reordering, added_axes, final_shape) =
-        //self.reconstruct_from_shape(tensor.shape())?;
-
         let mut tensor = tensor.reshape(&init_shape);
 
-        if self.reduced_elementary_axes.len() > 0 {
+        if !self.reduced_elementary_axes.is_empty() {
             if let Function::Reduce(operation) = self.reduction_type {
                 tensor = tensor.reduce(operation, &self.reduced_elementary_axes);
             }
@@ -283,7 +283,7 @@ impl TransformRecipe {
 
         tensor = tensor.transpose(&self.axes_permutation);
 
-        if added_axes.len() > 0 {
+        if !added_axes.is_empty() {
             tensor = tensor.add_axes(self.axes_permutation.len() + added_axes.len(), &added_axes);
         }
 
@@ -304,14 +304,12 @@ impl TransformRecipe {
                     shape.len()
                 )));
             }
-        } else {
-            if shape.len() != self.input_composite_axes.len() {
-                return Err(EinopsError::InvalidInput(format!(
-                    "expected {} dimensions, got {}",
-                    self.input_composite_axes.len(),
-                    shape.len()
-                )));
-            }
+        } else if shape.len() != self.input_composite_axes.len() {
+            return Err(EinopsError::InvalidInput(format!(
+                "expected {} dimensions, got {}",
+                self.input_composite_axes.len(),
+                shape.len()
+            )));
         }
         let mut ellipsis_shape = 0;
 
@@ -322,9 +320,7 @@ impl TransformRecipe {
             let after_ellipsis = input_axis + shape.len() - self.input_composite_axes.len();
 
             if input_axis == self.ellipsis_position_in_lhs.unwrap() {
-                ellipsis_shape = shape[before_ellipsis..after_ellipsis + 1]
-                    .iter()
-                    .fold(1, |acc, size| acc * size);
+                ellipsis_shape = shape[before_ellipsis..after_ellipsis + 1].iter().product();
 
                 axes_lengths[unknown_axes[0]] = Some(input_axis);
             } else {
@@ -339,7 +335,7 @@ impl TransformRecipe {
                     known_product *= axes_lengths[*axis].unwrap();
                 }
 
-                if unknown_axes.len() == 0 {
+                if unknown_axes.is_empty() {
                     if length as usize != known_product {
                         return Err(EinopsError::InvalidInput(format!(
                             "shape mismatch, {} != {}",
@@ -379,10 +375,6 @@ impl TransformRecipe {
             })
             .collect();
 
-        //let reduced_axes = self.reduced_elementary_axes.clone();
-
-        //let axes_reordering = self.axes_permutation.clone();
-
         let added_axes: Vec<(usize, usize)> = self
             .added_axes
             .iter()
@@ -391,8 +383,6 @@ impl TransformRecipe {
 
         Ok((
             init_shapes,
-            //reduced_axes,
-            //axes_reordering,
             added_axes,
             final_shapes,
         ))

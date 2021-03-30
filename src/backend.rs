@@ -3,7 +3,7 @@ mod torch;
 
 use crate::Operation;
 
-pub(crate) trait Backend {
+pub trait Backend {
     fn shape(&self) -> Vec<usize>;
     fn reshape(&self, shape: &[usize]) -> Self;
     fn transpose(&self, axes: &[usize]) -> Self;

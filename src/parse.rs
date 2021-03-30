@@ -39,7 +39,7 @@ impl ParsedExpression {
             None => return Ok(()),
         };
 
-        if current_ident == &ELLIPSIS {
+        if current_ident == ELLIPSIS {
             self.identifiers_named.insert(ELLIPSIS.to_string());
             match bracket_group.as_mut() {
                 Some(value) => {
@@ -93,14 +93,14 @@ impl ParsedExpression {
     }
 
     fn check_axis_name(name: &str) -> (bool, Option<&str>) {
-        if name.starts_with("_") || name.ends_with("_") {
+        if name.starts_with('_') || name.ends_with('_') {
             return (
                 false,
                 Some("axis name should not start or end with underscore"),
             );
         }
 
-        return (true, None);
+        (true, None)
     }
 
     pub(crate) fn new(expression: &str) -> Result<Self, EinopsError> {
@@ -111,18 +111,14 @@ impl ParsedExpression {
         let mut current_ident: Option<String> = None;
         let mut bracket_group: Option<Vec<Axis>> = None;
 
-        if expression.contains(".") {
+        if expression.contains('.') {
             if !expression.contains("...") {
                 return Err(EinopsError::Parse(
                     "expression may contain dots only inside ellipsis (...)".to_string(),
                 ));
             }
 
-            let count = expression
-                .matches("...")
-                .collect::<Vec<&str>>()
-                .iter()
-                .count();
+            let count = expression.matches("...").count();
             if count != 1 {
                 return Err(EinopsError::Parse(
                     "expression may contain dots only inside (...): only one ellipsis for tensor"
