@@ -181,7 +181,7 @@ impl TransformRecipe {
                     .iter()
                     .map(|axis| match axis {
                         Axis::Named(name) => {
-                            if name == &ELLIPSIS.to_string() {
+                            if name.as_str() == ELLIPSIS {
                                 return -1;
                             }
                             axes_len_pos.get(name).unwrap().1 as isize
@@ -269,21 +269,22 @@ impl TransformRecipe {
     }
 
     pub fn apply<T: Backend>(&self, tensor: T) -> Result<T, EinopsError> {
-        let (init_shape, reduced_axes, axes_reordering, added_axes, final_shape) =
-            self.reconstruct_from_shape(tensor.shape())?;
+        let (init_shape, added_axes, final_shape) = self.reconstruct_from_shape(tensor.shape())?;
+        //let (init_shape, reduced_axes, axes_reordering, added_axes, final_shape) =
+        //self.reconstruct_from_shape(tensor.shape())?;
 
         let mut tensor = tensor.reshape(&init_shape);
 
-        if reduced_axes.len() > 0 {
+        if self.reduced_elementary_axes.len() > 0 {
             if let Function::Reduce(operation) = self.reduction_type {
-                tensor = tensor.reduce(operation, &reduced_axes);
+                tensor = tensor.reduce(operation, &self.reduced_elementary_axes);
             }
         }
 
-        tensor = tensor.transpose(&axes_reordering);
+        tensor = tensor.transpose(&self.axes_permutation);
 
         if added_axes.len() > 0 {
-            tensor = tensor.add_axes(axes_reordering.len() + added_axes.len(), &added_axes);
+            tensor = tensor.add_axes(self.axes_permutation.len() + added_axes.len(), &added_axes);
         }
 
         Ok(tensor.reshape(&final_shape))
@@ -292,16 +293,7 @@ impl TransformRecipe {
     fn reconstruct_from_shape(
         &self,
         shape: Vec<usize>,
-    ) -> Result<
-        (
-            Vec<usize>,
-            Vec<usize>,
-            Vec<usize>,
-            Vec<(usize, usize)>,
-            Vec<usize>,
-        ),
-        EinopsError,
-    > {
+    ) -> Result<(Vec<usize>, Vec<(usize, usize)>, Vec<usize>), EinopsError> {
         let mut axes_lengths = self.elementary_axes_lengths.clone();
 
         if self.ellipsis_position_in_lhs.is_some() {
@@ -387,9 +379,9 @@ impl TransformRecipe {
             })
             .collect();
 
-        let reduced_axes = self.reduced_elementary_axes.clone();
+        //let reduced_axes = self.reduced_elementary_axes.clone();
 
-        let axes_reordering = self.axes_permutation.clone();
+        //let axes_reordering = self.axes_permutation.clone();
 
         let added_axes: Vec<(usize, usize)> = self
             .added_axes
@@ -399,8 +391,8 @@ impl TransformRecipe {
 
         Ok((
             init_shapes,
-            reduced_axes,
-            axes_reordering,
+            //reduced_axes,
+            //axes_reordering,
             added_axes,
             final_shapes,
         ))

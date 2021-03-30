@@ -7,7 +7,7 @@ use backend::{Backend, Operation};
 use error::EinopsError;
 use recipe::TransformRecipe;
 
-enum Function {
+pub enum Function {
     Rearrange,
     Repeat,
     Reduce(Operation),

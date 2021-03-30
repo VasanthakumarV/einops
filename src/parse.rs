@@ -130,7 +130,7 @@ impl ParsedExpression {
                 ));
             }
 
-            expression = expression.replace("...", &ELLIPSIS);
+            expression = expression.replace("...", ELLIPSIS);
 
             parsed_expression.has_ellipsis = true;
         }
