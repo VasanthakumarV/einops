@@ -5,7 +5,7 @@ use crate::error::EinopsError;
 use crate::parse::{Axis, ParsedExpression, ELLIPSIS};
 use crate::Function;
 
-pub struct TransformRecipe {
+pub(crate) struct TransformRecipe {
     elementary_axes_lengths: Vec<Option<usize>>,
     input_composite_axes: Vec<(Vec<usize>, Vec<usize>)>,
     reduced_elementary_axes: Vec<usize>,
@@ -17,7 +17,7 @@ pub struct TransformRecipe {
 }
 
 impl TransformRecipe {
-    pub fn new(
+    pub(crate) fn new(
         pattern: &str,
         operation: Function,
         axes_lengths: Option<&[(&str, usize)]>,
@@ -268,7 +268,7 @@ impl TransformRecipe {
         })
     }
 
-    pub fn apply<T: Backend>(&self, tensor: T) -> Result<T, EinopsError> {
+    pub(crate) fn apply<T: Backend>(&self, tensor: T) -> Result<T, EinopsError> {
         let (init_shape, added_axes, final_shape) = self.reconstruct_from_shape(tensor.shape())?;
         //let (init_shape, reduced_axes, axes_reordering, added_axes, final_shape) =
         //self.reconstruct_from_shape(tensor.shape())?;

@@ -3,16 +3,16 @@ use std::str::FromStr;
 
 use crate::error::EinopsError;
 
-pub const ELLIPSIS: &str = "…";
+pub(crate) const ELLIPSIS: &str = "…";
 
 #[derive(Debug, PartialEq)]
-pub enum Axis {
+pub(crate) enum Axis {
     Anonymous(usize),
     Named(String),
 }
 
 #[derive(Default, Debug, PartialEq)]
-pub struct ParsedExpression {
+pub(crate) struct ParsedExpression {
     pub has_ellipsis: bool,
     pub has_ellipsis_parenthesized: bool,
     pub has_non_unitary_anonymous_axes: bool,
@@ -103,7 +103,7 @@ impl ParsedExpression {
         return (true, None);
     }
 
-    pub fn new(expression: &str) -> Result<Self, EinopsError> {
+    pub(crate) fn new(expression: &str) -> Result<Self, EinopsError> {
         let mut expression = expression.to_string();
 
         let mut parsed_expression = Self::default();

@@ -1,16 +1,9 @@
 #[cfg(feature = "torch")]
 mod torch;
 
-#[derive(Copy, Clone)]
-pub enum Operation {
-    Min,
-    Max,
-    Sum,
-    Mean,
-    Prod,
-}
+use crate::Operation;
 
-pub trait Backend {
+pub(crate) trait Backend {
     fn shape(&self) -> Vec<usize>;
     fn reshape(&self, shape: &[usize]) -> Self;
     fn transpose(&self, axes: &[usize]) -> Self;
