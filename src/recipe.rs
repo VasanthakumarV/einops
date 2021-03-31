@@ -380,7 +380,9 @@ impl TransformRecipe {
             .iter()
             .enumerate()
             .map(|(_, grouping)| {
-                if grouping[0] == -1 {
+                if grouping.is_empty() {
+                    1
+                } else if grouping[0] == -1 {
                     ellipsis_shape as usize
                 } else {
                     grouping

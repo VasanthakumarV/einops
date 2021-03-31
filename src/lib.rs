@@ -85,13 +85,9 @@ mod tests {
     fn rearrange_test() -> Result<(), EinopsError> {
         let a = Tensor::arange(10 * 20 * 30 * 40, (Kind::Float, Device::Cpu))
             .reshape(&[10, 20, 30, 40]);
-        let b = Rearrange::new(
-            "b (c h1 w1) h w -> b c (h h1) (w w1)",
-            Some(&[("h1", 2), ("w1", 2)]),
-        )?
-        .apply(&a)?;
+        let b = Reduce::new("b c h w -> b c () ()", Operation::Max, None)?.apply(&a)?;
 
-        assert_eq!(b.shape(), vec![10, 5, 30 * 2, 40 * 2]);
+        assert_eq!(b.shape(), vec![10, 20, 1, 1]);
 
         Ok(())
     }
