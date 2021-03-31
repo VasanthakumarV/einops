@@ -30,7 +30,7 @@ impl Rearrange {
         Ok(Self { recipe })
     }
 
-    pub fn apply<T: Backend>(&self, tensor: T) -> Result<T, EinopsError> {
+    pub fn apply<T: Backend>(&self, tensor: &T) -> Result<T, EinopsError> {
         self.recipe.apply(tensor)
     }
 }
@@ -51,7 +51,7 @@ impl Reduce {
         Ok(Self { recipe })
     }
 
-    pub fn apply<T: Backend>(&self, tensor: T) -> Result<T, EinopsError> {
+    pub fn apply<T: Backend>(&self, tensor: &T) -> Result<T, EinopsError> {
         self.recipe.apply(tensor)
     }
 }
@@ -71,7 +71,7 @@ impl Repeat {
         Ok(Self { recipe })
     }
 
-    pub fn apply<T: Backend>(&self, tensor: T) -> Result<T, EinopsError> {
+    pub fn apply<T: Backend>(&self, tensor: &T) -> Result<T, EinopsError> {
         self.recipe.apply(tensor)
     }
 }
@@ -89,7 +89,7 @@ mod tests {
             "b (c h1 w1) h w -> b c (h h1) (w w1)",
             Some(&[("h1", 2), ("w1", 2)]),
         )?
-        .apply(a)?;
+        .apply(&a)?;
 
         assert_eq!(b.shape(), vec![10, 5, 30 * 2, 40 * 2]);
 

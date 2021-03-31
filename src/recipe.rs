@@ -281,7 +281,7 @@ impl TransformRecipe {
         })
     }
 
-    pub fn apply<T: Backend>(&self, tensor: T) -> Result<T, EinopsError> {
+    pub fn apply<T: Backend>(&self, tensor: &T) -> Result<T, EinopsError> {
         let (init_shapes, added_axes, final_shapes) =
             self.reconstruct_from_shape(tensor.shape())?;
 
