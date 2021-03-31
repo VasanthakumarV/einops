@@ -150,9 +150,7 @@ impl ParsedExpression {
                     match bracket_group.take() {
                         Some(value) => parsed_expression.composition.push(value),
                         None => {
-                            return Err(EinopsError::Parse(
-                                "brackets are not balanced".to_string(),
-                            ))
+                            return Err(EinopsError::Parse("brackets are not balanced".to_string()))
                         }
                     }
                 }

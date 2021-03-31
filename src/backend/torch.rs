@@ -1,4 +1,4 @@
-use tch::{Kind, Tensor};
+use tch::Tensor;
 
 use crate::backend::{Backend, Operation};
 
@@ -19,7 +19,7 @@ impl Backend for Tensor {
         let mut output = self.shallow_clone();
 
         let mut axes = axes.to_vec();
-        axes.sort();
+        axes.sort_unstable();
 
         for &axis in axes.iter().rev() {
             output = match operation {

@@ -20,11 +20,8 @@ pub struct Rearrange {
 }
 
 impl Rearrange {
-    pub fn new<'a, L>(pattern: &str, axes_lengths: L) -> Result<Self, EinopsError>
-    where
-        L: Into<Option<&'a [(&'a str, usize)]>>,
-    {
-        let recipe = TransformRecipe::new(pattern, Function::Rearrange, axes_lengths.into())?;
+    pub fn new(pattern: &str, axes_lengths: Option<&[(&str, usize)]>) -> Result<Self, EinopsError> {
+        let recipe = TransformRecipe::new(pattern, Function::Rearrange, axes_lengths)?;
 
         Ok(Self { recipe })
     }
@@ -39,16 +36,12 @@ pub struct Reduce {
 }
 
 impl Reduce {
-    pub fn new<'a, L>(
+    pub fn new(
         pattern: &str,
         operation: Operation,
-        axes_lengths: L,
-    ) -> Result<Self, EinopsError>
-    where
-        L: Into<Option<&'a [(&'a str, usize)]>>,
-    {
-        let recipe =
-            TransformRecipe::new(pattern, Function::Reduce(operation), axes_lengths.into())?;
+        axes_lengths: Option<&[(&str, usize)]>,
+    ) -> Result<Self, EinopsError> {
+        let recipe = TransformRecipe::new(pattern, Function::Reduce(operation), axes_lengths)?;
 
         Ok(Self { recipe })
     }
@@ -63,11 +56,8 @@ pub struct Repeat {
 }
 
 impl Repeat {
-    pub fn new<'a, L>(pattern: &str, axes_lengths: L) -> Result<Self, EinopsError>
-    where
-        L: Into<Option<&'a [(&'a str, usize)]>>,
-    {
-        let recipe = TransformRecipe::new(pattern, Function::Repeat, axes_lengths.into())?;
+    pub fn new(pattern: &str, axes_lengths: Option<&[(&str, usize)]>) -> Result<Self, EinopsError> {
+        let recipe = TransformRecipe::new(pattern, Function::Repeat, axes_lengths)?;
 
         Ok(Self { recipe })
     }
@@ -84,11 +74,15 @@ mod tests {
 
     #[test]
     fn rearrange_test() -> Result<(), EinopsError> {
-        let a = Tensor::arange(2 * 3 * 4 * 2, (Kind::Float, Device::Cpu)).reshape(&[2, 3, 4, 2]);
-        let b = Rearrange::new("b c h w -> b h w c", None)?.apply(a)?;
-        dbg!(b.shape());
+        let a = Tensor::arange(10 * 20 * 30 * 40, (Kind::Float, Device::Cpu))
+            .reshape(&[10, 20, 30, 40]);
+        let b = Rearrange::new(
+            "b (c h1 w1) h w -> b c (h h1) (w w1)",
+            Some(&[("h1", 2), ("w1", 2)]),
+        )?
+        .apply(a)?;
 
-        assert!(true);
+        assert_eq!(b.shape(), vec![10, 20 * 4, 30 / 2, 40 / 2]);
 
         Ok(())
     }

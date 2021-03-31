@@ -326,19 +326,18 @@ impl TransformRecipe {
         }
         let mut ellipsis_shape = 0;
 
-        for (input_axis, (known_axes, unknown_axes)) in
-            self.input_composite_axes.iter().enumerate()
+        for (input_axis, (known_axes, unknown_axes)) in self.input_composite_axes.iter().enumerate()
         {
             let before_ellipsis = input_axis;
             let after_ellipsis = input_axis + shape.len() - self.input_composite_axes.len();
 
-            if input_axis == self.ellipsis_position_in_lhs.unwrap() {
+            if Some(input_axis) == self.ellipsis_position_in_lhs {
                 ellipsis_shape = shape[before_ellipsis..after_ellipsis + 1].iter().product();
 
                 axes_lengths[unknown_axes[0]] = Some(input_axis);
             } else {
                 let length;
-                if input_axis < self.ellipsis_position_in_lhs.unwrap() {
+                if Some(input_axis) < self.ellipsis_position_in_lhs {
                     length = shape[before_ellipsis];
                 } else {
                     length = shape[after_ellipsis];
