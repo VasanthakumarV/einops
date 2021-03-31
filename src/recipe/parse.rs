@@ -22,6 +22,87 @@ pub struct ParsedExpression {
 }
 
 impl ParsedExpression {
+    pub fn new(expression: &str) -> Result<Self, EinopsError> {
+        let mut expression = expression.to_string();
+
+        let mut parsed_expression = Self::default();
+
+        let mut current_ident: Option<String> = None;
+        let mut bracket_group: Option<Vec<Axis>> = None;
+
+        if expression.contains('.') {
+            if !expression.contains("...") {
+                return Err(EinopsError::Parse(
+                    "expression may contain dots only inside ellipsis (...)".to_string(),
+                ));
+            }
+
+            let count = expression.matches("...").count();
+            if count != 1 {
+                return Err(EinopsError::Parse(
+                    "expression may contain dots only inside (...): only one ellipsis for tensor"
+                        .to_string(),
+                ));
+            }
+
+            expression = expression.replace("...", ELLIPSIS);
+
+            parsed_expression.has_ellipsis = true;
+        }
+
+        for char in expression.chars() {
+            match char {
+                '(' => {
+                    parsed_expression.add_axis_name(&current_ident, &mut bracket_group)?;
+                    current_ident = None;
+                    match bracket_group {
+                        Some(_) => return Err(EinopsError::Parse(
+                            "axis composition is one-level (brackets inside brackets not allowed)"
+                                .to_string(),
+                        )),
+                        None => bracket_group = Some(vec![]),
+                    }
+                }
+                ')' => {
+                    parsed_expression.add_axis_name(&current_ident, &mut bracket_group)?;
+                    current_ident = None;
+                    match bracket_group.take() {
+                        Some(value) => parsed_expression.composition.push(value),
+                        None => {
+                            return Err(EinopsError::Parse(
+                                "brackets are not balanced".to_string(),
+                            ))
+                        }
+                    }
+                }
+                ' ' => {
+                    parsed_expression.add_axis_name(&current_ident, &mut bracket_group)?;
+                    current_ident = None;
+                }
+                '_' | '…' => match current_ident.as_mut() {
+                    Some(value) => value.push(char),
+                    None => current_ident = Some(char.to_string()),
+                },
+                _ if char.is_alphanumeric() => match current_ident.as_mut() {
+                    Some(value) => value.push(char),
+                    None => current_ident = Some(char.to_string()),
+                },
+                _ => return Err(EinopsError::Parse(format!("unknown character '{}'", char))),
+            }
+        }
+
+        if bracket_group.is_some() {
+            return Err(EinopsError::Parse(format!(
+                "imbalanced parentheses in expression: {}",
+                expression
+            )));
+        }
+
+        parsed_expression.add_axis_name(&current_ident, &mut bracket_group)?;
+
+        Ok(parsed_expression)
+    }
+
     fn add_axis_name(
         &mut self,
         current_ident: &Option<String>,
@@ -101,85 +182,6 @@ impl ParsedExpression {
         }
 
         (true, None)
-    }
-
-    pub fn new(expression: &str) -> Result<Self, EinopsError> {
-        let mut expression = expression.to_string();
-
-        let mut parsed_expression = Self::default();
-
-        let mut current_ident: Option<String> = None;
-        let mut bracket_group: Option<Vec<Axis>> = None;
-
-        if expression.contains('.') {
-            if !expression.contains("...") {
-                return Err(EinopsError::Parse(
-                    "expression may contain dots only inside ellipsis (...)".to_string(),
-                ));
-            }
-
-            let count = expression.matches("...").count();
-            if count != 1 {
-                return Err(EinopsError::Parse(
-                    "expression may contain dots only inside (...): only one ellipsis for tensor"
-                        .to_string(),
-                ));
-            }
-
-            expression = expression.replace("...", ELLIPSIS);
-
-            parsed_expression.has_ellipsis = true;
-        }
-
-        for char in expression.chars() {
-            match char {
-                '(' => {
-                    parsed_expression.add_axis_name(&current_ident, &mut bracket_group)?;
-                    current_ident = None;
-                    match bracket_group {
-                        Some(_) => return Err(EinopsError::Parse(
-                            "axis composition is one-level (brackets inside brackets not allowed)"
-                                .to_string(),
-                        )),
-                        None => bracket_group = Some(vec![]),
-                    }
-                }
-                ')' => {
-                    parsed_expression.add_axis_name(&current_ident, &mut bracket_group)?;
-                    current_ident = None;
-                    match bracket_group.take() {
-                        Some(value) => parsed_expression.composition.push(value),
-                        None => {
-                            return Err(EinopsError::Parse("brackets are not balanced".to_string()))
-                        }
-                    }
-                }
-                ' ' => {
-                    parsed_expression.add_axis_name(&current_ident, &mut bracket_group)?;
-                    current_ident = None;
-                }
-                '_' | '…' => match current_ident.as_mut() {
-                    Some(value) => value.push(char),
-                    None => current_ident = Some(char.to_string()),
-                },
-                _ if char.is_alphanumeric() => match current_ident.as_mut() {
-                    Some(value) => value.push(char),
-                    None => current_ident = Some(char.to_string()),
-                },
-                _ => return Err(EinopsError::Parse(format!("unknown character '{}'", char))),
-            }
-        }
-
-        if bracket_group.is_some() {
-            return Err(EinopsError::Parse(format!(
-                "imbalanced parentheses in expression: {}",
-                expression
-            )));
-        }
-
-        parsed_expression.add_axis_name(&current_ident, &mut bracket_group)?;
-
-        Ok(parsed_expression)
     }
 }
 

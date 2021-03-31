@@ -7,12 +7,14 @@ use crate::error::EinopsError;
 use crate::Operation;
 use parse::{Axis, ParsedExpression, ELLIPSIS};
 
+#[derive(Debug)]
 pub enum Function {
     Rearrange,
     Repeat,
     Reduce(Operation),
 }
 
+#[derive(Debug)]
 pub struct TransformRecipe {
     elementary_axes_lengths: Vec<Option<usize>>,
     input_composite_axes: Vec<(Vec<usize>, Vec<usize>)>,
@@ -326,7 +328,8 @@ impl TransformRecipe {
         }
         let mut ellipsis_shape = 0;
 
-        for (input_axis, (known_axes, unknown_axes)) in self.input_composite_axes.iter().enumerate()
+        for (input_axis, (known_axes, unknown_axes)) in
+            self.input_composite_axes.iter().enumerate()
         {
             let before_ellipsis = input_axis;
             let after_ellipsis = input_axis + shape.len() - self.input_composite_axes.len();

@@ -6,7 +6,7 @@ use backend::Backend;
 use error::EinopsError;
 use recipe::{Function, TransformRecipe};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Operation {
     Min,
     Max,
@@ -15,12 +15,16 @@ pub enum Operation {
     Prod,
 }
 
+#[derive(Debug)]
 pub struct Rearrange {
     recipe: TransformRecipe,
 }
 
 impl Rearrange {
-    pub fn new(pattern: &str, axes_lengths: Option<&[(&str, usize)]>) -> Result<Self, EinopsError> {
+    pub fn new(
+        pattern: &str,
+        axes_lengths: Option<&[(&str, usize)]>,
+    ) -> Result<Self, EinopsError> {
         let recipe = TransformRecipe::new(pattern, Function::Rearrange, axes_lengths)?;
 
         Ok(Self { recipe })
@@ -31,6 +35,7 @@ impl Rearrange {
     }
 }
 
+#[derive(Debug)]
 pub struct Reduce {
     recipe: TransformRecipe,
 }
@@ -51,12 +56,16 @@ impl Reduce {
     }
 }
 
+#[derive(Debug)]
 pub struct Repeat {
     recipe: TransformRecipe,
 }
 
 impl Repeat {
-    pub fn new(pattern: &str, axes_lengths: Option<&[(&str, usize)]>) -> Result<Self, EinopsError> {
+    pub fn new(
+        pattern: &str,
+        axes_lengths: Option<&[(&str, usize)]>,
+    ) -> Result<Self, EinopsError> {
         let recipe = TransformRecipe::new(pattern, Function::Repeat, axes_lengths)?;
 
         Ok(Self { recipe })
@@ -82,7 +91,7 @@ mod tests {
         )?
         .apply(a)?;
 
-        assert_eq!(b.shape(), vec![10, 20 * 4, 30 / 2, 40 / 2]);
+        assert_eq!(b.shape(), vec![10, 5, 30 * 2, 40 * 2]);
 
         Ok(())
     }
