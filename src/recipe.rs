@@ -1,6 +1,5 @@
 mod parse;
 
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use crate::backend::Backend;
@@ -23,9 +22,6 @@ pub struct TransformRecipe {
     output_composite_axes: Vec<Vec<isize>>,
     reduction_type: Function,
     ellipsis_position_in_lhs: Option<usize>,
-    init_shapes: RefCell<Option<Vec<usize>>>,
-    final_shapes: RefCell<Option<Vec<usize>>>,
-    added_axes_sizes: RefCell<Option<Vec<(usize, usize)>>>,
 }
 
 impl TransformRecipe {
@@ -280,18 +276,14 @@ impl TransformRecipe {
             output_composite_axes: result_axes_grouping,
             reduction_type: operation,
             ellipsis_position_in_lhs: ellipsis_left,
-            init_shapes: RefCell::new(None),
-            final_shapes: RefCell::new(None),
-            added_axes_sizes: RefCell::new(None),
         })
     }
 
     pub fn apply<T: Backend>(&self, tensor: T) -> Result<T, EinopsError> {
-        if self.init_shapes.borrow().is_none() {
+        let (init_shapes, added_axes, final_shapes) =
             self.reconstruct_from_shape(tensor.shape())?;
-        }
 
-        let mut tensor = tensor.reshape(self.init_shapes.borrow().as_ref().unwrap());
+        let mut tensor = tensor.reshape(&init_shapes);
 
         if !self.reduced_elementary_axes.is_empty() {
             if let Function::Reduce(operation) = self.reduction_type {
@@ -304,14 +296,17 @@ impl TransformRecipe {
         if !self.added_axes.is_empty() {
             tensor = tensor.add_axes(
                 self.axes_permutation.len() + self.added_axes.len(),
-                self.added_axes_sizes.borrow().as_ref().unwrap(),
+                &added_axes,
             );
         }
 
-        Ok(tensor.reshape(self.final_shapes.borrow().as_ref().unwrap()))
+        Ok(tensor.reshape(&final_shapes))
     }
 
-    fn reconstruct_from_shape(&self, shape: Vec<usize>) -> Result<(), EinopsError> {
+    fn reconstruct_from_shape(
+        &self,
+        shape: Vec<usize>,
+    ) -> Result<(Vec<usize>, Vec<(usize, usize)>, Vec<usize>), EinopsError> {
         let mut axes_lengths = self.elementary_axes_lengths.clone();
 
         if self.ellipsis_position_in_lhs.is_some() {
@@ -373,36 +368,32 @@ impl TransformRecipe {
             }
         }
 
-        *self.init_shapes.borrow_mut() = Some(
-            axes_lengths[..(axes_lengths.len() - self.added_axes.len())]
-                .iter()
-                .map(|size| size.unwrap())
-                .collect(),
-        );
+        let init_shapes = axes_lengths[..(axes_lengths.len() - self.added_axes.len())]
+            .iter()
+            .map(|size| size.unwrap())
+            .collect();
 
-        *self.final_shapes.borrow_mut() = Some(
-            self.output_composite_axes
-                .iter()
-                .enumerate()
-                .map(|(_, grouping)| {
-                    if grouping[0] == -1 {
-                        ellipsis_shape as usize
-                    } else {
-                        grouping
-                            .iter()
-                            .fold(1, |acc, pos| acc * axes_lengths[*pos as usize].unwrap())
-                    }
-                })
-                .collect(),
-        );
+        let final_shapes = self
+            .output_composite_axes
+            .iter()
+            .enumerate()
+            .map(|(_, grouping)| {
+                if grouping[0] == -1 {
+                    ellipsis_shape as usize
+                } else {
+                    grouping
+                        .iter()
+                        .fold(1, |acc, pos| acc * axes_lengths[*pos as usize].unwrap())
+                }
+            })
+            .collect();
 
-        *self.added_axes_sizes.borrow_mut() = Some(
-            self.added_axes
-                .iter()
-                .map(|(pos, pos_in_elementary)| (*pos, axes_lengths[*pos_in_elementary].unwrap()))
-                .collect(),
-        );
+        let added_axes = self
+            .added_axes
+            .iter()
+            .map(|(pos, pos_in_elementary)| (*pos, axes_lengths[*pos_in_elementary].unwrap()))
+            .collect();
 
-        Ok(())
+        Ok((init_shapes, added_axes, final_shapes))
     }
 }
