@@ -1,12 +1,20 @@
+mod parse;
+
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use crate::backend::Backend;
 use crate::error::EinopsError;
-use crate::parse::{Axis, ParsedExpression, ELLIPSIS};
-use crate::Function;
+use crate::Operation;
+use parse::{Axis, ParsedExpression, ELLIPSIS};
 
-pub(crate) struct TransformRecipe {
+pub enum Function {
+    Rearrange,
+    Repeat,
+    Reduce(Operation),
+}
+
+pub struct TransformRecipe {
     elementary_axes_lengths: Vec<Option<usize>>,
     input_composite_axes: Vec<(Vec<usize>, Vec<usize>)>,
     reduced_elementary_axes: Vec<usize>,
@@ -21,7 +29,7 @@ pub(crate) struct TransformRecipe {
 }
 
 impl TransformRecipe {
-    pub(crate) fn new(
+    pub fn new(
         pattern: &str,
         operation: Function,
         axes_lengths: Option<&[(&str, usize)]>,
@@ -278,7 +286,7 @@ impl TransformRecipe {
         })
     }
 
-    pub(crate) fn apply<T: Backend>(&self, tensor: T) -> Result<T, EinopsError> {
+    pub fn apply<T: Backend>(&self, tensor: T) -> Result<T, EinopsError> {
         if self.init_shapes.borrow().is_none() {
             self.reconstruct_from_shape(tensor.shape())?;
         }
