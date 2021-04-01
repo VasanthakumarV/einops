@@ -86,8 +86,10 @@ mod tests {
         let a = Tensor::arange(10 * 20 * 30 * 40, (Kind::Float, Device::Cpu))
             .reshape(&[10, 20, 30, 40]);
         let b = Reduce::new("b c h w -> b c () ()", Operation::Max, None)?.apply(&a)?;
-
         assert_eq!(b.shape(), vec![10, 20, 1, 1]);
+
+        let c = Rearrange::new("b c () () -> c b", None)?.apply(&b)?;
+        assert_eq!(c.shape(), vec![20, 10]);
 
         Ok(())
     }

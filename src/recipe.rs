@@ -21,7 +21,7 @@ pub struct TransformRecipe {
     reduced_elementary_axes: Vec<usize>,
     axes_permutation: Vec<usize>,
     added_axes: HashMap<usize, usize>,
-    output_composite_axes: Vec<Vec<isize>>,
+    output_composite_axes: Vec<Vec<usize>>,
     reduction_type: Function,
     ellipsis_position_in_lhs: Option<usize>,
 }
@@ -186,7 +186,7 @@ impl TransformRecipe {
             .collect();
 
         // NOTE -1 indicates ellipsis
-        let result_axes_grouping: Vec<Vec<isize>> = right
+        let result_axes_grouping: Vec<Vec<usize>> = right
             .composition
             .iter()
             .map(|composite_axis| {
@@ -195,13 +195,11 @@ impl TransformRecipe {
                     .map(|axis| match axis {
                         Axis::Named(name) => {
                             if name.as_str() == ELLIPSIS {
-                                return -1;
+                                return usize::MAX;
                             }
-                            axes_len_pos.get(name).unwrap().1 as isize
+                            axes_len_pos.get(name).unwrap().1
                         }
-                        Axis::Anonymous(size) => {
-                            axes_len_pos.get(&size.to_string()).unwrap().1 as isize
-                        }
+                        Axis::Anonymous(size) => axes_len_pos.get(&size.to_string()).unwrap().1,
                     })
                     .collect()
             })
@@ -382,7 +380,7 @@ impl TransformRecipe {
             .map(|(_, grouping)| {
                 if grouping.is_empty() {
                     1
-                } else if grouping[0] == -1 {
+                } else if grouping[0] == usize::MAX {
                     ellipsis_shape as usize
                 } else {
                     grouping
