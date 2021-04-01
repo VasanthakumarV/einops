@@ -101,6 +101,15 @@ mod tests {
     use tch::{Device, Kind, Tensor};
 
     #[test]
+    fn collapsed_ellipsis_error() {
+        let patterns = &["a b c d (...) -> a b c ... d", "(...) -> (...)"];
+
+        for pattern in patterns {
+            assert!(Rearrange::new(pattern).is_err());
+        }
+    }
+
+    #[test]
     fn identity_patterns() -> Result<(), EinopsError> {
         let patterns = &[
             "... -> ...",
