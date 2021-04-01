@@ -194,7 +194,7 @@ impl TransformRecipe {
                     .iter()
                     .map(|axis| match axis {
                         Axis::Named(name) => {
-                            if name.as_str() == ELLIPSIS {
+                            if name.as_str() == ELLIPSIS && !right.has_ellipsis_parenthesized {
                                 return usize::MAX;
                             }
                             axes_len_pos.get(name).unwrap().1
@@ -324,18 +324,25 @@ impl TransformRecipe {
                 shape.len()
             )));
         }
-        let mut ellipsis_shape = 0;
+        let mut ellipsis_shape: Vec<usize> = vec![];
 
         for (input_axis, (known_axes, unknown_axes)) in
             self.input_composite_axes.iter().enumerate()
         {
             let before_ellipsis = input_axis;
-            let after_ellipsis = input_axis + shape.len() - self.input_composite_axes.len();
+            let after_ellipsis =
+                (input_axis + shape.len()).saturating_sub(self.input_composite_axes.len());
 
             if Some(input_axis) == self.ellipsis_position_in_lhs {
-                ellipsis_shape = shape[before_ellipsis..after_ellipsis + 1].iter().product();
-
-                axes_lengths[unknown_axes[0]] = Some(input_axis);
+                if (before_ellipsis == after_ellipsis)
+                    && (self.input_composite_axes.len() > shape.len())
+                {
+                    ellipsis_shape.extend(shape[before_ellipsis..after_ellipsis].iter().copied());
+                } else {
+                    ellipsis_shape
+                        .extend(shape[before_ellipsis..after_ellipsis + 1].iter().copied());
+                }
+                axes_lengths[unknown_axes[0]] = Some(ellipsis_shape.iter().product());
             } else {
                 let length;
                 if Some(input_axis) < self.ellipsis_position_in_lhs {
@@ -376,19 +383,20 @@ impl TransformRecipe {
         let final_shapes = self
             .output_composite_axes
             .iter()
-            .enumerate()
-            .map(|(_, grouping)| {
+            .fold(vec![], |mut acc, grouping| {
                 if grouping.is_empty() {
-                    1
+                    acc.push(1);
                 } else if grouping[0] == usize::MAX {
-                    ellipsis_shape as usize
+                    acc.extend(ellipsis_shape.iter().copied());
                 } else {
-                    grouping
-                        .iter()
-                        .fold(1, |acc, pos| acc * axes_lengths[*pos as usize].unwrap())
+                    acc.push(
+                        grouping
+                            .iter()
+                            .fold(1, |acc, pos| acc * axes_lengths[*pos].unwrap()),
+                    );
                 }
-            })
-            .collect();
+                acc
+            });
 
         let added_axes = self
             .added_axes
