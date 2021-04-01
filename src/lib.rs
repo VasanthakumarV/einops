@@ -113,7 +113,6 @@ mod tests {
             "a ... c d e -> a (...) c d e",
         ];
 
-        //let input = Tensor::zeros[&[1, 1, 1, 1, 1]];
         let input = Tensor::arange(2 * 3 * 4 * 5 * 6, (Kind::Float, Device::Cpu))
             .reshape(&[2, 3, 4, 5, 6]);
 
@@ -154,15 +153,26 @@ mod tests {
     }
 
     #[test]
-    fn rearrange_test() -> Result<(), EinopsError> {
-        let a = Tensor::arange(10 * 20 * 30 * 40, (Kind::Float, Device::Cpu))
-            .reshape(&[10, 20, 30, 40]);
-        let b = Reduce::new("b ... -> b (...)", Operation::Max)?.apply(&a)?;
-        dbg!(b.shape());
-        //assert_eq!(b.shape(), vec![10, 20 * 30 * 40]);
+    fn equivalent_reduction_patterns() -> Result<(), EinopsError> {
+        let patterns = &[
+            ("a b c d e -> ", "... -> "),
+            ("a b c d e -> (e a)", "a ... e -> (e a)"),
+            ("a b c d e -> d (a e)", "a b c d e ... -> d (a e)"),
+            ("a b c d e -> (a b)", "... c d e -> (...)"),
+        ];
+        let operations = &[Operation::Sum, Operation::Min, Operation::Max];
 
-        //let c = Rearrange::new("b c () () -> c b")?.apply(&b)?;
-        //assert_eq!(c.shape(), vec![20, 10]);
+        let input = Tensor::arange(2 * 3 * 4 * 5 * 6, (Kind::Float, Device::Cpu))
+            .reshape(&[2, 3, 4, 5, 6]);
+
+        for operation in operations {
+            for (pattern1, pattern2) in patterns {
+                let output1 = Reduce::new(pattern1, *operation)?.apply(&input)?;
+                let output2 = Reduce::new(pattern2, *operation)?.apply(&input)?;
+
+                assert_eq!(output1, output2);
+            }
+        }
 
         Ok(())
     }
