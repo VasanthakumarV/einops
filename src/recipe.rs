@@ -287,7 +287,7 @@ impl TransformRecipe {
 
         if !self.reduced_elementary_axes.is_empty() {
             if let Function::Reduce(operation) = self.reduction_type {
-                tensor = tensor.reduce(operation, &self.reduced_elementary_axes);
+                tensor = tensor.reduce_axes(operation, &self.reduced_elementary_axes);
             }
         }
 

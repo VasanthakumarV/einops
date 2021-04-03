@@ -110,6 +110,30 @@ mod tests {
     }
 
     #[test]
+    fn rearrange_consistency() -> Result<(), EinopsError> {
+        let input = Tensor::arange(1 * 2 * 3 * 5 * 7 * 11, (Kind::Float, Device::Cpu))
+            .reshape(&[1, 2, 3, 5, 7, 11]);
+
+        let output = Rearrange::new("a b c d e f -> a (b) (c d e) f")?.apply(&input)?;
+        assert_eq!(
+            input.flatten(0, input.size().len() as i64 - 1),
+            output.flatten(0, output.size().len() as i64 - 1)
+        );
+
+        let output1 = Rearrange::new("a b c d e f -> f e d c b a")?.apply(&input)?;
+        let output2 = Rearrange::new("f e d c b a -> a b c d e f")?.apply(&input)?;
+        assert_eq!(output1, output2);
+
+        let rearrange1 = Rearrange::new("a b c d e f -> (f d) c (e b) a")?;
+        let rearrange2 =
+            Rearrange::with_lengths("(f d) c (e b) a -> a b c d e f", &[("b", 2), ("d", 5)])?;
+        let output = rearrange2.apply(&rearrange1.apply(&input)?)?;
+        assert_eq!(output, input);
+
+        Ok(())
+    }
+
+    #[test]
     fn identity_patterns() -> Result<(), EinopsError> {
         let patterns = &[
             "... -> ...",

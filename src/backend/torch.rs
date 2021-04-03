@@ -1,8 +1,12 @@
 use tch::nn::Module;
 use tch::Tensor;
 
-use crate::backend::{Backend, Operation};
+use crate::backend::{Backend, Operation, RearrangeFn, ReduceFn, RepeatFn};
 use crate::{Rearrange, Reduce, Repeat};
+
+impl RearrangeFn for Tensor {}
+impl ReduceFn for Tensor {}
+impl RepeatFn for Tensor {}
 
 impl Backend for Tensor {
     fn shape(&self) -> Vec<usize> {
@@ -17,7 +21,7 @@ impl Backend for Tensor {
         self.permute(&axes.iter().map(|&x| x as i64).collect::<Vec<_>>())
     }
 
-    fn reduce(&self, operation: Operation, axes: &[usize]) -> Self {
+    fn reduce_axes(&self, operation: Operation, axes: &[usize]) -> Self {
         let mut output = self.shallow_clone();
 
         let mut axes = axes.to_vec();
@@ -72,7 +76,26 @@ impl Module for Repeat {
 mod tests {
     // TODO Add more tests
     use super::*;
+    use crate::{EinopsError, Operation};
     use tch::{Device, Kind, Tensor};
+
+    #[test]
+    fn tch_layers() -> Result<(), EinopsError> {
+        let mut input = Tensor::randn(&[10, 3, 32, 32], (Kind::Float, Device::Cpu));
+        input = input.set_requires_grad(true);
+
+        //let output1 = input.reduce("b c (h 2) (w 2) -> b c h w", Operation::Max)?;
+        //let mut output1 = input.reduce_with_lengths(
+        //"b c (h h2) (w w2) -> b c h w",
+        //Operation::Max,
+        //&[("h2", 2), ("w2", 2)],
+        //)?;
+        //let output2 = input.max_pool2d_default(2);
+
+        //assert_eq!(output1, output2);
+
+        Ok(())
+    }
 
     #[test]
     fn tch_reduce() {
@@ -93,7 +116,7 @@ mod tests {
         )];
 
         for (tensor, operation, axes, expected) in tests {
-            assert_eq!(tensor.reduce(operation, axes), expected);
+            assert_eq!(tensor.reduce_axes(operation, axes), expected);
         }
     }
 
