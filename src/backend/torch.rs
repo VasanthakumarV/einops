@@ -81,18 +81,12 @@ mod tests {
 
     #[test]
     fn tch_layers() -> Result<(), EinopsError> {
-        let mut input = Tensor::randn(&[10, 3, 32, 32], (Kind::Float, Device::Cpu));
-        input = input.set_requires_grad(true);
+        let input = Tensor::randn(&[10, 3, 32, 32], (Kind::Float, Device::Cpu));
 
-        //let output1 = input.reduce("b c (h 2) (w 2) -> b c h w", Operation::Max)?;
-        //let mut output1 = input.reduce_with_lengths(
-        //"b c (h h2) (w w2) -> b c h w",
-        //Operation::Max,
-        //&[("h2", 2), ("w2", 2)],
-        //)?;
-        //let output2 = input.max_pool2d_default(2);
+        let output1 = input.reduce("b c (h 2) (w 2) -> b c h w", Operation::Max)?;
+        let output2 = input.max_pool2d_default(2);
 
-        //assert_eq!(output1, output2);
+        assert_eq!(output1, output2);
 
         Ok(())
     }

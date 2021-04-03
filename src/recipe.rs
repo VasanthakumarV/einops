@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use crate::backend::Backend;
 use crate::error::EinopsError;
 use crate::Operation;
-use parse::{Axis, ParsedExpression, ELLIPSIS};
+use parse::{ParsedExpression, ELLIPSIS};
 
 #[derive(Debug)]
 pub enum Function {
@@ -34,7 +34,7 @@ impl TransformRecipe {
     ) -> Result<Self, EinopsError> {
         let expressions: Vec<&str> = pattern.split("->").collect();
 
-        let left = ParsedExpression::new(expressions[0])?;
+        let mut left = ParsedExpression::new(expressions[0])?;
         let right = ParsedExpression::new(expressions[1])?;
 
         if !left.has_ellipsis && right.has_ellipsis {
@@ -110,74 +110,79 @@ impl TransformRecipe {
             }
         }
 
-        let mut axes_len_pos: HashMap<String, (Option<usize>, usize)> = HashMap::new();
-        for (pos, axis) in left.composition.iter().flatten().enumerate() {
-            let _ = match axis {
-                Axis::Named(name) => axes_len_pos.insert(name.clone(), (None, pos)),
-                Axis::Anonymous(size) => axes_len_pos.insert(size.to_string(), (Some(*size), pos)),
-            };
-        }
-        for axis in right.composition.iter().flatten() {
-            match axis {
-                Axis::Named(name) => {
-                    if !axes_len_pos.contains_key(name) {
-                        let _ = axes_len_pos.insert(name.clone(), (None, axes_len_pos.len()));
-                    }
-                }
-                Axis::Anonymous(size) => {
-                    let name = size.to_string();
-                    let mut len = 0;
-
-                    axes_len_pos.entry(name).or_insert_with(|| {
-                        len += 1;
-                        (Some(*size), len - 1)
-                    });
-                }
-            }
-        }
+        let mut reduced_axes: Vec<usize> = vec![];
+        let mut axis_pos_after_reduction: HashMap<String, usize> = HashMap::new();
+        let mut axes_lengths_hash: HashMap<String, usize> = HashMap::new();
         if let Some(axes) = axes_lengths {
-            for &(axis, size) in axes {
-                if let Some(axis) = axes_len_pos.get_mut(axis) {
-                    axis.0 = Some(size);
-                } else {
-                    return Err(EinopsError::InvalidInput(format!(
-                        "axis {} is not used in pattern",
-                        axis
-                    )));
-                }
-            }
+            axes.iter().for_each(|(name, size)| {
+                let _ = axes_lengths_hash.insert(name.to_string(), *size);
+            });
         }
-
-        let mut reduced_axes: Vec<_> = axes_len_pos
-            .iter()
-            .filter_map(|(axis, &(_, pos))| {
-                // NOTE Anonymous axis is not considered
-                if !right.identifiers_named.contains(axis) {
-                    return Some(pos);
+        left.composition
+            .iter_mut()
+            .flatten()
+            .enumerate()
+            .for_each(|(pos, axis)| {
+                // Update sizes provided
+                if let Some(size) = axes_lengths_hash.get(axis.name.as_str()) {
+                    axis.size = Some(*size);
                 }
-                None
-            })
-            .collect();
-        reduced_axes.sort_unstable();
+                axis.pos = pos;
 
+                // Update `reduced_axes` and `axis_pos_after_reduction`
+                if !right.identifiers_named.contains(&axis.name) {
+                    reduced_axes.push(pos);
+                } else {
+                    axis_pos_after_reduction
+                        .insert(axis.name.clone(), axis_pos_after_reduction.len());
+                }
+            });
+
+        let axes_pos: HashMap<String, usize> = left
+            .composition
+            .iter()
+            .flatten()
+            .map(|axis| (axis.name.clone(), axis.pos))
+            .collect();
+
+        let mut axes_permutation: Vec<usize> = vec![];
+        let mut added_axes: HashMap<usize, usize> = HashMap::new();
+        right
+            .composition
+            .iter()
+            .flatten()
+            .enumerate()
+            .for_each(|(i, axis)| {
+                if left.identifiers_named.contains(&axis.name) {
+                    axes_permutation.push(*axis_pos_after_reduction.get(&axis.name).unwrap());
+                } else {
+                    let pos = *axes_pos.get(&axis.name).unwrap();
+                    added_axes.insert(i, pos);
+
+                    // Update `left.composition` and `axes_pos`
+                    //left.composition.push(vec!)
+                }
+            });
+
+        let mut ellipsis_left: Option<usize> = None;
         let axes_known_unknown: Vec<(Vec<usize>, Vec<usize>)> = left
             .composition
             .iter()
-            .map(|composite_axis| {
+            .enumerate()
+            .map(|(i, composite_axis)| {
                 let mut known = vec![];
                 let mut unknown = vec![];
 
-                composite_axis.iter().for_each(|axis| match axis {
-                    Axis::Named(name) => {
-                        let entry = axes_len_pos.get(name).unwrap();
-                        if entry.0.is_some() {
-                            known.push(entry.1);
-                        } else {
-                            unknown.push(entry.1);
-                        }
-                    }
-                    Axis::Anonymous(size) => {
-                        known.push(axes_len_pos.get(&size.to_string()).unwrap().1);
+                // Update `ellipsis_left`
+                if composite_axis[0].name == ELLIPSIS.to_string() {
+                    ellipsis_left = Some(i);
+                }
+
+                composite_axis.iter().for_each(|axis| {
+                    if let Some(_) = axis.size {
+                        known.push(axis.pos);
+                    } else {
+                        unknown.push(axis.pos);
                     }
                 });
 
@@ -185,87 +190,28 @@ impl TransformRecipe {
             })
             .collect();
 
-        // NOTE -1 indicates ellipsis
         let result_axes_grouping: Vec<Vec<usize>> = right
             .composition
             .iter()
             .map(|composite_axis| {
                 composite_axis
                     .iter()
-                    .map(|axis| match axis {
-                        Axis::Named(name) => {
-                            if name.as_str() == ELLIPSIS && !right.has_ellipsis_parenthesized {
-                                return usize::MAX;
-                            }
-                            axes_len_pos.get(name).unwrap().1
+                    .map(|axis| {
+                        if axis.name.as_str() == ELLIPSIS && !right.has_ellipsis_parenthesized {
+                            return usize::MAX;
                         }
-                        Axis::Anonymous(size) => axes_len_pos.get(&size.to_string()).unwrap().1,
+                        *axes_pos.get(&axis.name).unwrap()
                     })
                     .collect()
             })
             .collect();
 
-        let mut axis_pos_after_reduction: HashMap<String, usize> = HashMap::new();
-        left.composition
-            .iter()
-            .flatten()
-            .for_each(|axis| match axis {
-                Axis::Named(name) => {
-                    if right.identifiers_named.contains(name) {
-                        axis_pos_after_reduction
-                            .insert(name.clone(), axis_pos_after_reduction.len());
-                    }
-                }
-                Axis::Anonymous(_) => {}
-            });
-        let axes_permutation: Vec<usize> = right
+        let elementary_axes_lengths: Vec<Option<usize>> = left
             .composition
             .iter()
             .flatten()
-            .filter_map(|axis| match axis {
-                Axis::Named(name) => {
-                    if left.identifiers_named.contains(name) {
-                        return Some(*axis_pos_after_reduction.get(name).unwrap());
-                    }
-                    None
-                }
-                Axis::Anonymous(_) => None,
-            })
+            .map(|axis| axis.size)
             .collect();
-
-        let added_axes: HashMap<usize, usize> = right
-            .composition
-            .iter()
-            .flatten()
-            .enumerate()
-            .filter_map(|(i, axis)| {
-                let pos = match axis {
-                    Axis::Named(name) => {
-                        if left.identifiers_named.contains(name) {
-                            return None;
-                        }
-                        axes_len_pos.get(name).unwrap().1
-                    }
-                    Axis::Anonymous(size) => axes_len_pos.get(&size.to_string()).unwrap().1,
-                };
-
-                Some((i, pos))
-            })
-            .collect();
-
-        let mut elementary_axes_lengths: Vec<(Option<usize>, usize)> =
-            axes_len_pos.values().cloned().collect();
-        elementary_axes_lengths.sort_by_key(|(_, pos)| *pos);
-        let (elementary_axes_lengths, _): (Vec<Option<usize>>, Vec<_>) =
-            elementary_axes_lengths.into_iter().unzip();
-
-        let ellipsis_left = if left.has_ellipsis {
-            left.composition
-                .iter()
-                .position(|composite_axis| composite_axis[0] == Axis::Named(ELLIPSIS.to_string()))
-        } else {
-            None
-        };
 
         Ok(TransformRecipe {
             elementary_axes_lengths,
