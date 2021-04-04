@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use crate::backend::Backend;
 use crate::error::EinopsError;
 use crate::Operation;
-use parse::{ParsedExpression, ELLIPSIS};
+use parse::{Axis, ParsedExpression, ELLIPSIS};
 
 #[derive(Debug)]
 pub enum Function {
@@ -124,7 +124,7 @@ impl TransformRecipe {
             .enumerate()
             .for_each(|(pos, axis)| {
                 // Update sizes provided
-                if let Some(size) = axes_lengths_hash.get(axis.name.as_str()) {
+                if let Some(size) = axes_lengths_hash.get(&axis.name) {
                     axis.size = Some(*size);
                 }
                 axis.pos = pos;
@@ -138,31 +138,12 @@ impl TransformRecipe {
                 }
             });
 
-        let axes_pos: HashMap<String, usize> = left
+        let mut axes_pos: HashMap<String, usize> = left
             .composition
             .iter()
             .flatten()
             .map(|axis| (axis.name.clone(), axis.pos))
             .collect();
-
-        let mut axes_permutation: Vec<usize> = vec![];
-        let mut added_axes: HashMap<usize, usize> = HashMap::new();
-        right
-            .composition
-            .iter()
-            .flatten()
-            .enumerate()
-            .for_each(|(i, axis)| {
-                if left.identifiers_named.contains(&axis.name) {
-                    axes_permutation.push(*axis_pos_after_reduction.get(&axis.name).unwrap());
-                } else {
-                    let pos = *axes_pos.get(&axis.name).unwrap();
-                    added_axes.insert(i, pos);
-
-                    // Update `left.composition` and `axes_pos`
-                    //left.composition.push(vec!)
-                }
-            });
 
         let mut ellipsis_left: Option<usize> = None;
         let axes_known_unknown: Vec<(Vec<usize>, Vec<usize>)> = left
@@ -174,7 +155,7 @@ impl TransformRecipe {
                 let mut unknown = vec![];
 
                 // Update `ellipsis_left`
-                if composite_axis[0].name == ELLIPSIS.to_string() {
+                if !composite_axis.is_empty() && composite_axis[0].name == ELLIPSIS.to_string() {
                     ellipsis_left = Some(i);
                 }
 
@@ -189,6 +170,38 @@ impl TransformRecipe {
                 (known, unknown)
             })
             .collect();
+
+        let mut axes_permutation: Vec<usize> = vec![];
+        let mut added_axes: HashMap<usize, usize> = HashMap::new();
+        right
+            .composition
+            .iter()
+            .flatten()
+            .enumerate()
+            .for_each(|(i, axis)| {
+                if left.identifiers_named.contains(&axis.name) {
+                    if let Some(value) = axis_pos_after_reduction.get(&axis.name) {
+                        axes_permutation.push(*value);
+                    }
+                } else {
+                    let pos = axes_pos.len();
+
+                    added_axes.insert(i, pos);
+                    axes_pos.insert(axis.name.clone(), pos);
+
+                    let size: Option<usize>;
+                    if let Some(value) = axis.size {
+                        size = Some(value)
+                    } else {
+                        size = axes_lengths_hash.get(&axis.name).copied();
+                    }
+                    left.composition.push(vec![Axis {
+                        name: axis.name.clone(),
+                        size,
+                        pos,
+                    }]);
+                }
+            });
 
         let result_axes_grouping: Vec<Vec<usize>> = right
             .composition
@@ -272,8 +285,7 @@ impl TransformRecipe {
         }
         let mut ellipsis_shape: Vec<usize> = vec![];
 
-        for (input_axis, (known_axes, unknown_axes)) in
-            self.input_composite_axes.iter().enumerate()
+        for (input_axis, (known_axes, unknown_axes)) in self.input_composite_axes.iter().enumerate()
         {
             let before_ellipsis = input_axis;
             let after_ellipsis =
@@ -344,11 +356,12 @@ impl TransformRecipe {
                 acc
             });
 
-        let added_axes = self
+        let mut added_axes: Vec<(usize, usize)> = self
             .added_axes
             .iter()
             .map(|(pos, pos_in_elementary)| (*pos, axes_lengths[*pos_in_elementary].unwrap()))
             .collect();
+        added_axes.sort_by_key(|(pos, _)| *pos);
 
         Ok((init_shapes, added_axes, final_shapes))
     }

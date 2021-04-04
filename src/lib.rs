@@ -98,7 +98,7 @@ impl Repeat {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tch::{Device, Kind, Tensor};
+    use tch::{Device, IndexOp, Kind, Tensor};
 
     #[test]
     fn collapsed_ellipsis_error() {
@@ -130,6 +130,11 @@ mod tests {
         let output = rearrange2.apply(&rearrange1.apply(&input)?)?;
         assert_eq!(output, input);
 
+        let input = Tensor::arange(2 * 3 * 4, (Kind::Float, Device::Cpu)).reshape(&[2, 3, 4]);
+        let output = Rearrange::new("a b c -> b c a")?.apply(&input)?;
+        assert_eq!(input.i((1, 2, 3)), output.i((2, 3, 1)));
+        assert_eq!(input.i((0, 1, 2)), output.i((1, 2, 0)));
+
         Ok(())
     }
 
@@ -146,8 +151,8 @@ mod tests {
             "a ... c d e -> a (...) c d e",
         ];
 
-        let input = Tensor::arange(2 * 3 * 4 * 5 * 6, (Kind::Float, Device::Cpu))
-            .reshape(&[2, 3, 4, 5, 6]);
+        let input =
+            Tensor::arange(2 * 3 * 4 * 5 * 6, (Kind::Float, Device::Cpu)).reshape(&[2, 3, 4, 5, 6]);
 
         for pattern in patterns {
             assert_eq!(
@@ -172,8 +177,8 @@ mod tests {
             ("a b c d e -> b (a c d) e", "a b ... e -> b (a ...) e"),
         ];
 
-        let input = Tensor::arange(2 * 3 * 4 * 5 * 6, (Kind::Float, Device::Cpu))
-            .reshape(&[2, 3, 4, 5, 6]);
+        let input =
+            Tensor::arange(2 * 3 * 4 * 5 * 6, (Kind::Float, Device::Cpu)).reshape(&[2, 3, 4, 5, 6]);
 
         for (pattern1, pattern2) in patterns {
             let output1 = Rearrange::new(pattern1)?.apply(&input)?;
@@ -195,8 +200,8 @@ mod tests {
         ];
         let operations = &[Operation::Sum, Operation::Min, Operation::Max];
 
-        let input = Tensor::arange(2 * 3 * 4 * 5 * 6, (Kind::Float, Device::Cpu))
-            .reshape(&[2, 3, 4, 5, 6]);
+        let input =
+            Tensor::arange(2 * 3 * 4 * 5 * 6, (Kind::Float, Device::Cpu)).reshape(&[2, 3, 4, 5, 6]);
 
         for operation in operations {
             for (pattern1, pattern2) in patterns {
@@ -205,6 +210,90 @@ mod tests {
 
                 assert_eq!(output1, output2);
             }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn repeat_anonymous_patterns() -> Result<(), EinopsError> {
+        let tests = &[
+            ("a b c d -> (c 2 d a b)", vec![("a", 1), ("c", 4), ("d", 6)]),
+            ("1 b c d -> (d copy 1) 3 b c", vec![("copy", 3)]),
+            (
+                "() ... d -> 1 (copy1 d copy2) ...",
+                vec![("copy1", 2), ("copy2", 3)],
+            ),
+            ("1 ... -> 3 ...", vec![]),
+            ("1 b c d -> (1 1) (1 b) 2 c 3 d (1 1)", vec![]),
+        ];
+
+        let input =
+            Tensor::arange(1 * 2 * 4 * 6, (Kind::Float, Device::Cpu)).reshape(&[1, 2, 4, 6]);
+
+        for (pattern, lengths) in tests {
+            let output = Repeat::with_lengths(pattern, lengths.as_slice())?.apply(&input)?;
+
+            let mut pattern = pattern.split("->").collect::<Vec<_>>();
+            pattern.reverse();
+            let pattern = pattern.join("->");
+            let expected_min =
+                Reduce::with_lengths(pattern.as_str(), Operation::Min, lengths.as_slice())?
+                    .apply(&output)?;
+            let expected_max =
+                Reduce::with_lengths(pattern.as_str(), Operation::Max, lengths.as_slice())?
+                    .apply(&output)?;
+
+            assert_eq!(input, expected_min);
+            assert_eq!(input, expected_max);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn repeat_patterns() -> Result<(), EinopsError> {
+        let tests = &[
+            ("a b c -> c a b", vec![]),
+            (
+                "a b c -> (c copy a b)",
+                vec![("copy", 2), ("a", 2), ("b", 3), ("c", 5)],
+            ),
+            ("a b c -> (a copy) b c", vec![("copy", 1)]),
+            (
+                "a b c -> (c a) (copy1 b copy2)",
+                vec![("a", 2), ("copy1", 1), ("copy2", 2)],
+            ),
+            ("a ... -> a ... copy", vec![("copy", 4)]),
+            (
+                "... c -> ... (copy1 c copy2)",
+                vec![("copy1", 1), ("copy2", 2)],
+            ),
+            ("... -> copy1 ... copy2", vec![("copy1", 2), ("copy2", 3)]),
+            ("... -> ...", vec![]),
+            (
+                "a b c -> copy1 a copy2 b c ()",
+                vec![("copy1", 2), ("copy2", 1)],
+            ),
+        ];
+
+        let input = Tensor::arange(2 * 3 * 5, (Kind::Float, Device::Cpu)).reshape(&[2, 3, 5]);
+
+        for (pattern, lengths) in tests {
+            let output = Repeat::with_lengths(pattern, lengths.as_slice())?.apply(&input)?;
+
+            let mut pattern = pattern.split("->").collect::<Vec<_>>();
+            pattern.reverse();
+            let pattern = pattern.join("->");
+            let expected_min =
+                Reduce::with_lengths(pattern.as_str(), Operation::Min, lengths.as_slice())?
+                    .apply(&output)?;
+            let expected_max =
+                Reduce::with_lengths(pattern.as_str(), Operation::Max, lengths.as_slice())?
+                    .apply(&output)?;
+
+            assert_eq!(input, expected_min);
+            assert_eq!(input, expected_max);
         }
 
         Ok(())
