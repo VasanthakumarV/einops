@@ -207,184 +207,302 @@ impl ParsedExpression {
     }
 }
 
-//#[cfg(test)]
-//mod tests {
-//use super::*;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-//#[test]
-//fn invalid_expressions() {
-//let tests = vec![
-//ParsedExpression::new("... a b c d ..."),
-//ParsedExpression::new("... a b c (d ...)"),
-//ParsedExpression::new("(... a) b c (d ...)"),
-//ParsedExpression::new("(a)) b c (d ...)"),
-//ParsedExpression::new("(a b c (d ...)"),
-//ParsedExpression::new("(a) (()) b c (d ...)"),
-//ParsedExpression::new("(a) ((b c) (d ...)"),
-//];
+    #[test]
+    fn invalid_expressions() {
+        let tests = vec![
+            ParsedExpression::new("... a b c d ..."),
+            ParsedExpression::new("... a b c (d ...)"),
+            ParsedExpression::new("(... a) b c (d ...)"),
+            ParsedExpression::new("(a)) b c (d ...)"),
+            ParsedExpression::new("(a b c (d ...)"),
+            ParsedExpression::new("(a) (()) b c (d ...)"),
+            ParsedExpression::new("(a) ((b c) (d ...)"),
+        ];
 
-//for output in tests {
-//assert!(output.is_err());
-//}
-//}
+        for output in tests {
+            assert!(output.is_err());
+        }
+    }
 
-//#[test]
-//fn parse_expressions() {
-//let tests = vec![
-//// #1
-//(
-//ParsedExpression::new("a1 b1  c1   d1").unwrap(),
-//ParsedExpression {
-//has_ellipsis: false,
-//has_ellipsis_parenthesized: false,
-//has_non_unitary_anonymous_axes: false,
-//identifiers_named: ["a1", "b1", "c1", "d1"]
-//.iter()
-//.cloned()
-//.map(String::from)
-//.collect(),
-//identifiers_anonymous: vec![],
-//composition: vec![
-//vec![Axis::Named("a1".to_string())],
-//vec![Axis::Named("b1".to_string())],
-//vec![Axis::Named("c1".to_string())],
-//vec![Axis::Named("d1".to_string())],
-//],
-//},
-//),
-//// #2
-//(
-//ParsedExpression::new("() () () ()").unwrap(),
-//ParsedExpression {
-//has_ellipsis: false,
-//has_ellipsis_parenthesized: false,
-//has_non_unitary_anonymous_axes: false,
-//identifiers_named: HashSet::new(),
-//identifiers_anonymous: vec![],
-//composition: vec![vec![], vec![], vec![], vec![]],
-//},
-//),
-//// #3
-//(
-//ParsedExpression::new("1 1 1 ()").unwrap(),
-//ParsedExpression {
-//has_ellipsis: false,
-//has_ellipsis_parenthesized: false,
-//has_non_unitary_anonymous_axes: false,
-//identifiers_named: HashSet::new(),
-//identifiers_anonymous: vec![],
-//composition: vec![vec![], vec![], vec![], vec![]],
-//},
-//),
-//// #4
-//(
-//ParsedExpression::new("5 (3 4)").unwrap(),
-//ParsedExpression {
-//has_ellipsis: false,
-//has_ellipsis_parenthesized: false,
-//has_non_unitary_anonymous_axes: true,
-//identifiers_named: HashSet::new(),
-//identifiers_anonymous: vec![5, 3, 4],
-//composition: vec![
-//vec![Axis::Anonymous(5)],
-//vec![Axis::Anonymous(3), Axis::Anonymous(4)],
-//],
-//},
-//),
-//// #5
-//(
-//ParsedExpression::new("5 1 (1 4) 1").unwrap(),
-//ParsedExpression {
-//has_ellipsis: false,
-//has_ellipsis_parenthesized: false,
-//has_non_unitary_anonymous_axes: true,
-//identifiers_named: HashSet::new(),
-//identifiers_anonymous: vec![5, 4],
-//composition: vec![
-//vec![Axis::Anonymous(5)],
-//vec![],
-//vec![Axis::Anonymous(4)],
-//vec![],
-//],
-//},
-//),
-//// #6
-//(
-//ParsedExpression::new("name1 ... a1 12 (name2 14)").unwrap(),
-//ParsedExpression {
-//has_ellipsis: true,
-//has_ellipsis_parenthesized: false,
-//has_non_unitary_anonymous_axes: true,
-//identifiers_named: ["name1", ELLIPSIS, "a1", "name2"]
-//.iter()
-//.cloned()
-//.map(String::from)
-//.collect(),
-//identifiers_anonymous: vec![12, 14],
-//composition: vec![
-//vec![Axis::Named("name1".to_string())],
-//vec![Axis::Named(ELLIPSIS.to_string())],
-//vec![Axis::Named("a1".to_string())],
-//vec![Axis::Anonymous(12)],
-//vec![Axis::Named("name2".to_string()), Axis::Anonymous(14)],
-//],
-//},
-//),
-//// #7
-//(
-//ParsedExpression::new("(name1 ... a1 12) name2 14").unwrap(),
-//ParsedExpression {
-//has_ellipsis: true,
-//has_ellipsis_parenthesized: true,
-//has_non_unitary_anonymous_axes: true,
-//identifiers_named: ["name1", ELLIPSIS, "a1", "name2"]
-//.iter()
-//.cloned()
-//.map(String::from)
-//.collect(),
-//identifiers_anonymous: vec![12, 14],
-//composition: vec![
-//vec![
-//Axis::Named("name1".to_string()),
-//Axis::Named(ELLIPSIS.to_string()),
-//Axis::Named("a1".to_string()),
-//Axis::Anonymous(12),
-//],
-//vec![Axis::Named("name2".to_string())],
-//vec![Axis::Anonymous(14)],
-//],
-//},
-//),
-//// #8
-//(
-//ParsedExpression::new("(name1 ... a1 12 12) name2 14").unwrap(),
-//ParsedExpression {
-//has_ellipsis: true,
-//has_ellipsis_parenthesized: true,
-//has_non_unitary_anonymous_axes: true,
-//identifiers_named: ["name1", ELLIPSIS, "a1", "name2"]
-//.iter()
-//.cloned()
-//.map(String::from)
-//.collect(),
-//identifiers_anonymous: vec![12, 12, 14],
-//composition: vec![
-//vec![
-//Axis::Named("name1".to_string()),
-//Axis::Named(ELLIPSIS.to_string()),
-//Axis::Named("a1".to_string()),
-//Axis::Anonymous(12),
-//Axis::Anonymous(12),
-//],
-//vec![Axis::Named("name2".to_string())],
-//vec![Axis::Anonymous(14)],
-//],
-//},
-//),
-//];
+    #[test]
+    fn parse_expressions() {
+        let tests = vec![
+            // #1
+            (
+                ParsedExpression::new("a1 b1  c1   d1").unwrap(),
+                ParsedExpression {
+                    has_ellipsis: false,
+                    has_ellipsis_parenthesized: false,
+                    has_non_unitary_anonymous_axes: false,
+                    identifiers_named: ["a1", "b1", "c1", "d1"]
+                        .iter()
+                        .cloned()
+                        .map(String::from)
+                        .collect(),
+                    identifiers_anonymous: vec![],
+                    composition: vec![
+                        vec![Axis {
+                            name: "a1".to_string(),
+                            size: None,
+                            pos: 0,
+                        }],
+                        vec![Axis {
+                            name: "b1".to_string(),
+                            size: None,
+                            pos: 0,
+                        }],
+                        vec![Axis {
+                            name: "c1".to_string(),
+                            size: None,
+                            pos: 0,
+                        }],
+                        vec![Axis {
+                            name: "d1".to_string(),
+                            size: None,
+                            pos: 0,
+                        }],
+                    ],
+                },
+            ),
+            // #2
+            (
+                ParsedExpression::new("() () () ()").unwrap(),
+                ParsedExpression {
+                    has_ellipsis: false,
+                    has_ellipsis_parenthesized: false,
+                    has_non_unitary_anonymous_axes: false,
+                    identifiers_named: HashSet::new(),
+                    identifiers_anonymous: vec![],
+                    composition: vec![vec![], vec![], vec![], vec![]],
+                },
+            ),
+            // #3
+            (
+                ParsedExpression::new("1 1 1 ()").unwrap(),
+                ParsedExpression {
+                    has_ellipsis: false,
+                    has_ellipsis_parenthesized: false,
+                    has_non_unitary_anonymous_axes: false,
+                    identifiers_named: HashSet::new(),
+                    identifiers_anonymous: vec![],
+                    composition: vec![vec![], vec![], vec![], vec![]],
+                },
+            ),
+            // #4
+            (
+                ParsedExpression::new("5 (3 4)").unwrap(),
+                ParsedExpression {
+                    has_ellipsis: false,
+                    has_ellipsis_parenthesized: false,
+                    has_non_unitary_anonymous_axes: true,
+                    identifiers_named: HashSet::new(),
+                    identifiers_anonymous: vec![5, 3, 4],
+                    composition: vec![
+                        vec![Axis {
+                            name: 5.to_string(),
+                            size: Some(5),
+                            pos: 0,
+                        }],
+                        vec![
+                            Axis {
+                                name: 3.to_string(),
+                                size: Some(3),
+                                pos: 0,
+                            },
+                            Axis {
+                                name: 4.to_string(),
+                                size: Some(4),
+                                pos: 0,
+                            },
+                        ],
+                    ],
+                },
+            ),
+            // #5
+            (
+                ParsedExpression::new("5 1 (1 4) 1").unwrap(),
+                ParsedExpression {
+                    has_ellipsis: false,
+                    has_ellipsis_parenthesized: false,
+                    has_non_unitary_anonymous_axes: true,
+                    identifiers_named: HashSet::new(),
+                    identifiers_anonymous: vec![5, 4],
+                    composition: vec![
+                        vec![Axis {
+                            name: 5.to_string(),
+                            size: Some(5),
+                            pos: 0,
+                        }],
+                        vec![],
+                        vec![Axis {
+                            name: 4.to_string(),
+                            size: Some(4),
+                            pos: 0,
+                        }],
+                        vec![],
+                    ],
+                },
+            ),
+            // #6
+            (
+                ParsedExpression::new("name1 ... a1 12 (name2 14)").unwrap(),
+                ParsedExpression {
+                    has_ellipsis: true,
+                    has_ellipsis_parenthesized: false,
+                    has_non_unitary_anonymous_axes: true,
+                    identifiers_named: ["name1", ELLIPSIS, "a1", "name2"]
+                        .iter()
+                        .cloned()
+                        .map(String::from)
+                        .collect(),
+                    identifiers_anonymous: vec![12, 14],
+                    composition: vec![
+                        vec![Axis {
+                            name: "name1".to_string(),
+                            size: None,
+                            pos: 0,
+                        }],
+                        vec![Axis {
+                            name: ELLIPSIS.to_string(),
+                            size: None,
+                            pos: 0,
+                        }],
+                        vec![Axis {
+                            name: "a1".to_string(),
+                            size: None,
+                            pos: 0,
+                        }],
+                        vec![Axis {
+                            name: 12.to_string(),
+                            size: Some(12),
+                            pos: 0,
+                        }],
+                        vec![
+                            Axis {
+                                name: "name2".to_string(),
+                                size: None,
+                                pos: 0,
+                            },
+                            Axis {
+                                name: 14.to_string(),
+                                size: Some(14),
+                                pos: 0,
+                            },
+                        ],
+                    ],
+                },
+            ),
+            // #7
+            (
+                ParsedExpression::new("(name1 ... a1 12) name2 14").unwrap(),
+                ParsedExpression {
+                    has_ellipsis: true,
+                    has_ellipsis_parenthesized: true,
+                    has_non_unitary_anonymous_axes: true,
+                    identifiers_named: ["name1", ELLIPSIS, "a1", "name2"]
+                        .iter()
+                        .cloned()
+                        .map(String::from)
+                        .collect(),
+                    identifiers_anonymous: vec![12, 14],
+                    composition: vec![
+                        vec![
+                            Axis {
+                                name: "name1".to_string(),
+                                size: None,
+                                pos: 0,
+                            },
+                            Axis {
+                                name: ELLIPSIS.to_string(),
+                                size: None,
+                                pos: 0,
+                            },
+                            Axis {
+                                name: "a1".to_string(),
+                                size: None,
+                                pos: 0,
+                            },
+                            Axis {
+                                name: 12.to_string(),
+                                size: Some(12),
+                                pos: 0,
+                            },
+                        ],
+                        vec![Axis {
+                            name: "name2".to_string(),
+                            size: None,
+                            pos: 0,
+                        }],
+                        vec![Axis {
+                            name: 14.to_string(),
+                            size: Some(14),
+                            pos: 0,
+                        }],
+                    ],
+                },
+            ),
+            // #8
+            (
+                ParsedExpression::new("(name1 ... a1 12 12) name2 14").unwrap(),
+                ParsedExpression {
+                    has_ellipsis: true,
+                    has_ellipsis_parenthesized: true,
+                    has_non_unitary_anonymous_axes: true,
+                    identifiers_named: ["name1", ELLIPSIS, "a1", "name2"]
+                        .iter()
+                        .cloned()
+                        .map(String::from)
+                        .collect(),
+                    identifiers_anonymous: vec![12, 12, 14],
+                    composition: vec![
+                        vec![
+                            Axis {
+                                name: "name1".to_string(),
+                                size: None,
+                                pos: 0,
+                            },
+                            Axis {
+                                name: ELLIPSIS.to_string(),
+                                size: None,
+                                pos: 0,
+                            },
+                            Axis {
+                                name: "a1".to_string(),
+                                size: None,
+                                pos: 0,
+                            },
+                            Axis {
+                                name: 12.to_string(),
+                                size: Some(12),
+                                pos: 0,
+                            },
+                            Axis {
+                                name: 12.to_string(),
+                                size: Some(12),
+                                pos: 0,
+                            },
+                        ],
+                        vec![Axis {
+                            name: "name2".to_string(),
+                            size: None,
+                            pos: 0,
+                        }],
+                        vec![Axis {
+                            name: 14.to_string(),
+                            size: Some(14),
+                            pos: 0,
+                        }],
+                    ],
+                },
+            ),
+        ];
 
-//for (output, expected) in tests {
-//assert_eq!(output, expected);
-//}
-//}
-//}
+        for (output, expected) in tests {
+            assert_eq!(output, expected);
+        }
+    }
+}
