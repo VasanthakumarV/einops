@@ -18,7 +18,6 @@ pub struct ParsedExpression {
     pub has_ellipsis_parenthesized: bool,
     pub has_non_unitary_anonymous_axes: bool,
     pub identifiers_named: HashSet<String>,
-    identifiers_anonymous: Vec<usize>,
     pub composition: Vec<Vec<Axis>>,
 }
 
@@ -28,7 +27,10 @@ impl ParsedExpression {
 
         let mut parsed_expression = Self::default();
 
+        // A string to tract the characters of the current identifier
         let mut current_ident: Option<String> = None;
+
+        // A vector to store identifiers that are present inside parenthesis
         let mut bracket_group: Option<Vec<Axis>> = None;
 
         if expression.contains('.') {
@@ -54,28 +56,36 @@ impl ParsedExpression {
         for char in expression.chars() {
             match char {
                 '(' => {
+                    // Add currently tracked identifier to `composition` and reinitialize the
+                    // `current_ident` variable
                     parsed_expression.add_axis_name(&current_ident, &mut bracket_group)?;
                     current_ident = None;
+
                     match bracket_group {
+                        // Nested parenthesis is not supported
                         Some(_) => return Err(EinopsError::Parse(
                             "axis composition is one-level (brackets inside brackets not allowed)"
                                 .to_string(),
                         )),
+                        // Initialize vector to store identifiers inside parenthesis
                         None => bracket_group = Some(vec![]),
                     }
                 }
                 ')' => {
+                    // Add `current_ident` to the bracket_group
                     parsed_expression.add_axis_name(&current_ident, &mut bracket_group)?;
                     current_ident = None;
+
+                    // Push the contents of `bracket_group` to `composition and revert
+                    // it back to `None`
                     match bracket_group.take() {
                         Some(value) => parsed_expression.composition.push(value),
                         None => {
-                            return Err(EinopsError::Parse(
-                                "brackets are not balanced".to_string(),
-                            ))
+                            return Err(EinopsError::Parse("brackets are not balanced".to_string()))
                         }
                     }
                 }
+                // A space marks the end of the name of a identifier
                 ' ' => {
                     parsed_expression.add_axis_name(&current_ident, &mut bracket_group)?;
                     current_ident = None;
@@ -92,6 +102,8 @@ impl ParsedExpression {
             }
         }
 
+        // `bracket_group` should be `None`, once we exhaust all the characters
+        // of the expression
         if bracket_group.is_some() {
             return Err(EinopsError::Parse(format!(
                 "imbalanced parentheses in expression: {}",
@@ -99,6 +111,7 @@ impl ParsedExpression {
             )));
         }
 
+        // We flush the content of `current_ident` to composition
         parsed_expression.add_axis_name(&current_ident, &mut bracket_group)?;
 
         Ok(parsed_expression)
@@ -111,6 +124,7 @@ impl ParsedExpression {
     ) -> Result<(), EinopsError> {
         let current_ident = match current_ident.as_ref() {
             Some(value) => {
+                // We raise an error, if the name of the identifier is a duplicate
                 if self.identifiers_named.contains(value.as_str()) {
                     return Err(EinopsError::Parse(
                         "indexing expression contains duplicate dimension".to_string(),
@@ -118,6 +132,7 @@ impl ParsedExpression {
                 }
                 value
             }
+            // We return fast, if empty
             None => return Ok(()),
         };
 
@@ -142,17 +157,20 @@ impl ParsedExpression {
                 }
             }
         } else {
+            // We try to parse the string as an integer
             let size = usize::from_str(&current_ident);
+
             match size {
                 Ok(1) => {
                     if bracket_group.is_none() {
                         self.composition.push(vec![]);
                     }
+
                     return Ok(());
                 }
                 Ok(size) => {
-                    self.identifiers_anonymous.push(size);
                     self.has_non_unitary_anonymous_axes = true;
+
                     match bracket_group.as_mut() {
                         Some(value) => value.push(Axis {
                             name: size.to_string(),
@@ -169,6 +187,8 @@ impl ParsedExpression {
                 _ => {
                     let (is_axis_name, reason) = ParsedExpression::check_axis_name(&current_ident);
                     if !is_axis_name {
+                        // `unwrap` is safe, because it will always have a value
+                        // if the axis name is invalid
                         return Err(EinopsError::Parse(format!(
                             "invalid axis identifier: {}",
                             reason.unwrap()
@@ -176,6 +196,7 @@ impl ParsedExpression {
                     }
 
                     self.identifiers_named.insert(current_ident.clone());
+
                     match bracket_group.as_mut() {
                         Some(value) => value.push(Axis {
                             name: current_ident.clone(),
@@ -243,7 +264,6 @@ mod tests {
                         .cloned()
                         .map(String::from)
                         .collect(),
-                    identifiers_anonymous: vec![],
                     composition: vec![
                         vec![Axis {
                             name: "a1".to_string(),
@@ -276,7 +296,6 @@ mod tests {
                     has_ellipsis_parenthesized: false,
                     has_non_unitary_anonymous_axes: false,
                     identifiers_named: HashSet::new(),
-                    identifiers_anonymous: vec![],
                     composition: vec![vec![], vec![], vec![], vec![]],
                 },
             ),
@@ -288,7 +307,6 @@ mod tests {
                     has_ellipsis_parenthesized: false,
                     has_non_unitary_anonymous_axes: false,
                     identifiers_named: HashSet::new(),
-                    identifiers_anonymous: vec![],
                     composition: vec![vec![], vec![], vec![], vec![]],
                 },
             ),
@@ -300,7 +318,6 @@ mod tests {
                     has_ellipsis_parenthesized: false,
                     has_non_unitary_anonymous_axes: true,
                     identifiers_named: HashSet::new(),
-                    identifiers_anonymous: vec![5, 3, 4],
                     composition: vec![
                         vec![Axis {
                             name: 5.to_string(),
@@ -330,7 +347,6 @@ mod tests {
                     has_ellipsis_parenthesized: false,
                     has_non_unitary_anonymous_axes: true,
                     identifiers_named: HashSet::new(),
-                    identifiers_anonymous: vec![5, 4],
                     composition: vec![
                         vec![Axis {
                             name: 5.to_string(),
@@ -359,7 +375,6 @@ mod tests {
                         .cloned()
                         .map(String::from)
                         .collect(),
-                    identifiers_anonymous: vec![12, 14],
                     composition: vec![
                         vec![Axis {
                             name: "name1".to_string(),
@@ -408,7 +423,6 @@ mod tests {
                         .cloned()
                         .map(String::from)
                         .collect(),
-                    identifiers_anonymous: vec![12, 14],
                     composition: vec![
                         vec![
                             Axis {
@@ -457,7 +471,6 @@ mod tests {
                         .cloned()
                         .map(String::from)
                         .collect(),
-                    identifiers_anonymous: vec![12, 12, 14],
                     composition: vec![
                         vec![
                             Axis {

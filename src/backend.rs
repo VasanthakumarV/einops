@@ -11,7 +11,9 @@ pub trait Backend {
     fn add_axes(&self, naxes: usize, pos2len: &[(usize, usize)]) -> Self;
 }
 
+/// Trait that allows calling the rearrange operation directly on the tensor
 pub trait RearrangeFn {
+    /// Apply rearrange operation using the pattern
     fn rearrange(&self, pattern: &str) -> Result<Self, EinopsError>
     where
         Self: Sized + Backend,
@@ -19,6 +21,8 @@ pub trait RearrangeFn {
         Rearrange::new(pattern)?.apply(self)
     }
 
+    /// Apply rearrange operation using the pattern and additional axes lengths
+    /// attribute
     fn rearrange_with_lengths(
         &self,
         pattern: &str,
@@ -31,7 +35,9 @@ pub trait RearrangeFn {
     }
 }
 
+/// Trait that allows calling the reduce operation directly on the tensor
 pub trait ReduceFn {
+    /// Apply reduce operation using the pattern and [`Operation`]
     fn reduce(&self, pattern: &str, operation: Operation) -> Result<Self, EinopsError>
     where
         Self: Sized + Backend,
@@ -39,6 +45,8 @@ pub trait ReduceFn {
         Reduce::new(pattern, operation)?.apply(self)
     }
 
+    /// Apply rearrange operation using the pattern, [`Operation`], and additional axes
+    /// lengths attribute
     fn reduce_with_lengths(
         &self,
         pattern: &str,
@@ -52,7 +60,9 @@ pub trait ReduceFn {
     }
 }
 
+/// Trait that allows calling the repeat operation directly on the tensor
 pub trait RepeatFn {
+    /// Apply repeat operation using the pattern
     fn repeat(&self, pattern: &str) -> Result<Self, EinopsError>
     where
         Self: Sized + Backend,
@@ -60,6 +70,7 @@ pub trait RepeatFn {
         Repeat::new(pattern)?.apply(self)
     }
 
+    /// Apply repeat operation using the pattern and additional axes lengths attribute
     fn repeat_with_lenghts(
         &self,
         pattern: &str,

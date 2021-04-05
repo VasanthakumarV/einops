@@ -1,32 +1,48 @@
+#![warn(missing_docs)]
+//! # Einops
+//!
+//! Flexible and powerful tensor operations for readable and reliable code.
+
 mod backend;
-pub mod error;
+mod error;
 mod recipe;
 
 use backend::Backend;
-use error::EinopsError;
+pub use backend::{RearrangeFn, ReduceFn, RepeatFn};
+pub use error::EinopsError;
 use recipe::{Function, TransformRecipe};
 
+/// Specifies the operation used to reduce an axis
 #[derive(Copy, Clone, Debug)]
 pub enum Operation {
+    /// Take the minimum value
     Min,
+    /// Take the maximum value
     Max,
+    /// Add all elements
     Sum,
+    /// Take the average
     Mean,
+    /// Multiply all elements
     Prod,
 }
 
+/// Reader-friendly reordering of tensors. Includes the functionality of transpose
+/// (axes permutation), reshape, squeeze, unsqueeze and other operations
 #[derive(Debug)]
 pub struct Rearrange {
     recipe: TransformRecipe,
 }
 
 impl Rearrange {
+    /// Initialize with pattern
     pub fn new(pattern: &str) -> Result<Self, EinopsError> {
         let recipe = TransformRecipe::new(pattern, Function::Rearrange, None)?;
 
         Ok(Self { recipe })
     }
 
+    /// Initialize with pattern and lengths of axes
     pub fn with_lengths(
         pattern: &str,
         axes_lengths: &[(&str, usize)],
@@ -36,23 +52,49 @@ impl Rearrange {
         Ok(Self { recipe })
     }
 
+    /// Perform rearrange operation on the tensor
     pub fn apply<T: Backend>(&self, tensor: &T) -> Result<T, EinopsError> {
         self.recipe.apply(tensor)
     }
 }
 
+/// Provides combination of reordering and reduction using reader-friendly notation
+///
+/// # Examples
+/// ```
+/// use tch::{Tensor, Kind, Device};
+/// use einops::{Reduce, Operation};
+/// // Trait required to call functions directly on the tensors
+/// use einops::ReduceFn;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let input = Tensor::randn(&[100, 32, 64], (Kind::Float, Device::Cpu));
+///
+/// // Perform matrix reduction on first axis
+/// let output = Reduce::new("t b c -> b c", Operation::Max)?.apply(&input)?;
+/// assert_eq!(output.size(), vec![32, 64]);
+///
+/// // Same reduction done directly on the tensor using `ReduceFn` trait
+/// let output = input.reduce("t b c -> b c", Operation::Max)?;
+/// assert_eq!(output.size(), vec![32, 64]);
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug)]
 pub struct Reduce {
     recipe: TransformRecipe,
 }
 
 impl Reduce {
+    /// Initialize using the pattern and [`Operation`] (the mode of reduction)
     pub fn new(pattern: &str, operation: Operation) -> Result<Self, EinopsError> {
         let recipe = TransformRecipe::new(pattern, Function::Reduce(operation), None)?;
 
         Ok(Self { recipe })
     }
 
+    /// Initialize with pattern, [`Operation`], and a slice of tuples indicating the sizes
+    /// of different axes
     pub fn with_lengths(
         pattern: &str,
         operation: Operation,
@@ -64,23 +106,28 @@ impl Reduce {
         Ok(Self { recipe })
     }
 
+    /// Perform the reduction transformation on the supplied tensor
     pub fn apply<T: Backend>(&self, tensor: &T) -> Result<T, EinopsError> {
         self.recipe.apply(tensor)
     }
 }
 
+/// Repeat allows reordering elements and repeating them in arbitrary combinations. This
+/// includes functionality of repeat, tile, and broadcast functions
 #[derive(Debug)]
 pub struct Repeat {
     recipe: TransformRecipe,
 }
 
 impl Repeat {
+    /// Initialize with pattern
     pub fn new(pattern: &str) -> Result<Self, EinopsError> {
         let recipe = TransformRecipe::new(pattern, Function::Repeat, None)?;
 
         Ok(Self { recipe })
     }
 
+    /// Initialize with pattern and lengths of axes
     pub fn with_lengths(
         pattern: &str,
         axes_lengths: &[(&str, usize)],
@@ -90,6 +137,7 @@ impl Repeat {
         Ok(Self { recipe })
     }
 
+    /// Perform operation on the input tensor
     pub fn apply<T: Backend>(&self, tensor: &T) -> Result<T, EinopsError> {
         self.recipe.apply(tensor)
     }

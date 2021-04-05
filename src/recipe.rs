@@ -16,11 +16,17 @@ pub enum Function {
 
 #[derive(Debug)]
 pub struct TransformRecipe {
+    // List of available size info
     elementary_axes_lengths: Vec<Option<usize>>,
+    // Separates known and unknown portions of the input axis
     input_composite_axes: Vec<(Vec<usize>, Vec<usize>)>,
+    // Positions of axis that get reduced
     reduced_elementary_axes: Vec<usize>,
+    // Permutation info of reduced tensor before adding any new axis
     axes_permutation: Vec<usize>,
+    // Position where the new axes should appear and their size
     added_axes: HashMap<usize, usize>,
+    // Positions of output axis as per `elementary_axes_lengths`
     output_composite_axes: Vec<Vec<usize>>,
     reduction_type: Function,
     ellipsis_position_in_lhs: Option<usize>,
@@ -110,27 +116,37 @@ impl TransformRecipe {
             }
         }
 
+        // Vec to store list of axis positions that get reduced
         let mut reduced_axes: Vec<usize> = vec![];
+
+        // Helper hashmap that stores the axes names that don't get reduced
         let mut axis_pos_after_reduction: HashMap<String, usize> = HashMap::new();
+
+        // We convert the slice into hashmap for easy search
         let mut axes_lengths_hash: HashMap<String, usize> = HashMap::new();
         if let Some(axes) = axes_lengths {
             axes.iter().for_each(|(name, size)| {
                 let _ = axes_lengths_hash.insert(name.to_string(), *size);
             });
         }
+
         left.composition
             .iter_mut()
             .flatten()
             .enumerate()
             .for_each(|(pos, axis)| {
-                // Update sizes provided
+                // If an axis length is provided, we update its size in the
+                // `left.composition`
                 if let Some(size) = axes_lengths_hash.get(&axis.name) {
                     axis.size = Some(*size);
                 }
+
+                // Intially all `pos` values will be 0, we rectify that by
+                // updating them
                 axis.pos = pos;
 
-                // Update `reduced_axes` and `axis_pos_after_reduction`
                 if !right.identifiers_named.contains(&axis.name) {
+                    // If an axis is not available, we note down its position
                     reduced_axes.push(pos);
                 } else {
                     axis_pos_after_reduction
@@ -138,6 +154,8 @@ impl TransformRecipe {
                 }
             });
 
+        // We create a hashmap out of `left.composition`, this will help us later
+        // on, when we search for position using the axis name
         let mut axes_pos: HashMap<String, usize> = left
             .composition
             .iter()
@@ -145,7 +163,11 @@ impl TransformRecipe {
             .map(|axis| (axis.name.clone(), axis.pos))
             .collect();
 
+        // Variable to store the position of ellipsis, if available
         let mut ellipsis_left: Option<usize> = None;
+
+        // List of lists to store the positions of known and unknown components
+        // of each input axis
         let axes_known_unknown: Vec<(Vec<usize>, Vec<usize>)> = left
             .composition
             .iter()
@@ -155,12 +177,12 @@ impl TransformRecipe {
                 let mut unknown = vec![];
 
                 // Update `ellipsis_left`
-                if !composite_axis.is_empty() && composite_axis[0].name == ELLIPSIS.to_string() {
+                if !composite_axis.is_empty() && composite_axis[0].name == *ELLIPSIS {
                     ellipsis_left = Some(i);
                 }
 
                 composite_axis.iter().for_each(|axis| {
-                    if let Some(_) = axis.size {
+                    if axis.size.is_some() {
                         known.push(axis.pos);
                     } else {
                         unknown.push(axis.pos);
@@ -171,8 +193,13 @@ impl TransformRecipe {
             })
             .collect();
 
+        // Variable that tells us how to permute the input tensor after reduction
+        // but before adding new axis
         let mut axes_permutation: Vec<usize> = vec![];
+
+        // Stores the position and size of new axis that needs to be added
         let mut added_axes: HashMap<usize, usize> = HashMap::new();
+
         right
             .composition
             .iter()
@@ -181,14 +208,20 @@ impl TransformRecipe {
             .for_each(|(i, axis)| {
                 if left.identifiers_named.contains(&axis.name) {
                     if let Some(value) = axis_pos_after_reduction.get(&axis.name) {
+                        // Stores index values in the order they appear in the output
+                        // tensor
                         axes_permutation.push(*value);
                     }
                 } else {
                     let pos = axes_pos.len();
 
-                    added_axes.insert(i, pos);
+                    // We update `axes_pos` with new axis info
                     axes_pos.insert(axis.name.clone(), pos);
 
+                    added_axes.insert(i, pos);
+
+                    // We update `left.composition` with the information about
+                    // the new axis that needs to be added in the output
                     let size: Option<usize>;
                     if let Some(value) = axis.size {
                         size = Some(value)
@@ -213,12 +246,16 @@ impl TransformRecipe {
                         if axis.name.as_str() == ELLIPSIS && !right.has_ellipsis_parenthesized {
                             return usize::MAX;
                         }
+                        // `unwrap` is safe, because `axes_pos` should have all the
+                        // unique identifiers from both left and right side of the pattern
                         *axes_pos.get(&axis.name).unwrap()
                     })
                     .collect()
             })
             .collect();
 
+        // We store all known and unknown size info we have into a vector,
+        // to preserve the order
         let elementary_axes_lengths: Vec<Option<usize>> = left
             .composition
             .iter()
@@ -244,14 +281,17 @@ impl TransformRecipe {
 
         let mut tensor = tensor.reshape(&init_shapes);
 
+        // We reduce the necessary axes
         if !self.reduced_elementary_axes.is_empty() {
             if let Function::Reduce(operation) = self.reduction_type {
                 tensor = tensor.reduce_axes(operation, &self.reduced_elementary_axes);
             }
         }
 
+        // We permute the tensor
         tensor = tensor.transpose(&self.axes_permutation);
 
+        // We add new axes
         if !self.added_axes.is_empty() {
             tensor = tensor.add_axes(
                 self.axes_permutation.len() + self.added_axes.len(),
@@ -262,6 +302,7 @@ impl TransformRecipe {
         Ok(tensor.reshape(&final_shapes))
     }
 
+    #[allow(clippy::type_complexity)]
     fn reconstruct_from_shape(
         &self,
         shape: Vec<usize>,
@@ -283,8 +324,10 @@ impl TransformRecipe {
                 shape.len()
             )));
         }
-        let mut ellipsis_shape: Vec<usize> = vec![];
 
+        // In this section, we track all axes sizes covered by the ellipsis entry,
+        // and we fill any missing size information in `axes_lengths` list
+        let mut ellipsis_shape: Vec<usize> = vec![];
         for (input_axis, (known_axes, unknown_axes)) in self.input_composite_axes.iter().enumerate()
         {
             let before_ellipsis = input_axis;
@@ -300,6 +343,7 @@ impl TransformRecipe {
                     ellipsis_shape
                         .extend(shape[before_ellipsis..after_ellipsis + 1].iter().copied());
                 }
+
                 axes_lengths[unknown_axes[0]] = Some(ellipsis_shape.iter().product());
             } else {
                 let length;
@@ -308,8 +352,11 @@ impl TransformRecipe {
                 } else {
                     length = shape[after_ellipsis];
                 }
+
                 let mut known_product = 1;
                 for axis in known_axes {
+                    // `unwrap` is safe, because `known_axes` entries are created
+                    // by checking for existence of size
                     known_product *= axes_lengths[*axis].unwrap();
                 }
 
@@ -335,6 +382,8 @@ impl TransformRecipe {
 
         let init_shapes = axes_lengths[..(axes_lengths.len() - self.added_axes.len())]
             .iter()
+            // `unwrap` is safe, because at the this, we should have already
+            // figured all the size values
             .map(|size| size.unwrap())
             .collect();
 
@@ -350,6 +399,8 @@ impl TransformRecipe {
                     acc.push(
                         grouping
                             .iter()
+                            // `unwrap` is safe, because at the this, we should have already
+                            // figured all the size values
                             .fold(1, |acc, pos| acc * axes_lengths[*pos].unwrap()),
                     );
                 }
@@ -359,8 +410,13 @@ impl TransformRecipe {
         let mut added_axes: Vec<(usize, usize)> = self
             .added_axes
             .iter()
+            // `unwrap` is safe, because at the this, we should have already
+            // figured all the size values
             .map(|(pos, pos_in_elementary)| (*pos, axes_lengths[*pos_in_elementary].unwrap()))
             .collect();
+
+        // NOTE Ordering the `added_axes` hashmap is necessary incase the new axes
+        // are incrementally created in the backend
         added_axes.sort_by_key(|(pos, _)| *pos);
 
         Ok((init_shapes, added_axes, final_shapes))
