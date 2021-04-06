@@ -415,7 +415,6 @@ impl TransformRecipe {
             // figured all the size values
             .map(|(pos, pos_in_elementary)| (*pos, axes_lengths[*pos_in_elementary].unwrap()))
             .collect();
-        dbg!(&added_axes);
 
         Ok((init_shapes, added_axes, final_shapes))
     }

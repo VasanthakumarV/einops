@@ -1,7 +1,73 @@
 #![warn(missing_docs)]
 //! # Einops
 //!
+//! This is a rust port of the incredible [einops](https://github.com/arogozhnikov/einops) library.
+//! Almost all the operations specified in its tutorial should be available, if you find any
+//! inconsistencies please raise a github issue.
+//!
+//! _Unlike its python counterpart, caching the parsed expression has not been implemented yet. So
+//! when applying the same pattern multiple times, prefer_ `Rearrange::new(...)` _or_ `Rearrange::with_lengths(...)`
+//! _api, over the methods available through `RearrangeFn` like traits_
+//!
 //! Flexible and powerful tensor operations for readable and reliable code.
+//! Currently only supports [tch](https://github.com/LaurentMazare/tch-rs).
+//!
+//! ## Getting started
+//!
+//! Add the following to your `Cargo.toml` file,
+//!
+//! ```ignore
+//! [dependencies]
+//! einops = { version: "0.1", features: ["tch-bindings"] }
+//! ```
+//!
+//! ## Examples
+//!
+//! Einops provies three operations, they cover stacking, reshape, transposition,
+//! squeeze/unsqueeze, repeat, tile, concatenate and numerous reductions
+//!
+//! ```ignore
+//! // Tch specific imports
+//! use tch::{Tensor, Kind, Device};
+//! // Structs that provide constructor like api
+//! use einops::{Rearrange, Repeat, Reduce, Operation, Backend};
+//! // Traits required to call functions directly on the tensors
+//! use einops::{ReduceFn, RearrangeFn, RepeatFn};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // We create a random tensor as input
+//! let input = Tensor::randn(&[100, 32, 64], (Kind::Float, Device::Cpu));
+//!
+//! // ------------------------------------------------------------------------
+//! // Rearrange operation
+//! let output = Rearrange::new("t b c -> b c t")?.apply(&input)?;
+//! assert_eq!(output.size(), vec![32, 64, 100]);
+//!
+//! // Apply rearrange operation directly on the tensor using `RearrangeFn` trait
+//! let output = input.rearrange("t b c -> b c t")?;
+//! assert_eq!(output.size(), vec![32, 64, 100]);
+//!
+//! // ------------------------------------------------------------------------
+//! // Perform reduction on first axis
+//! let output = Reduce::new("t b c -> b c", Operation::Max)?.apply(&input)?;
+//! assert_eq!(output.size(), vec![32, 64]);
+//!
+//! // Same reduction done directly on the tensor using `ReduceFn` trait
+//! let output = input.reduce("t b c -> b c", Operation::Max)?;
+//! assert_eq!(output.size(), vec![32, 64]);
+//!
+//! // ------------------------------------------------------------------------
+//! // We repeat the third axis
+//! let output = Repeat::new("t b c -> t b c 3")?.apply(&input)?;
+//! assert_eq!(output.size(), vec![100, 32, 64, 3]);
+//!
+//! // Same as above, but using `RepeatFn` trait and we specify the repeating
+//! // axis with a name along with its size and pass it in a slice
+//! let output = input.repeat_with_lengths("t b c -> t b c repeat", &[("repeat", 3)])?;
+//! assert_eq!(output.size(), vec![100, 32, 64, 3]);
+//! # Ok(())
+//! # }
+//! ```
 
 mod backend;
 mod error;
@@ -59,27 +125,6 @@ impl Rearrange {
 }
 
 /// Provides combination of reordering and reduction using reader-friendly notation
-///
-/// # Examples
-/// ```
-/// use tch::{Tensor, Kind, Device};
-/// use einops::{Reduce, Operation};
-/// // Trait required to call functions directly on the tensors
-/// use einops::ReduceFn;
-///
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let input = Tensor::randn(&[100, 32, 64], (Kind::Float, Device::Cpu));
-///
-/// // Perform matrix reduction on first axis
-/// let output = Reduce::new("t b c -> b c", Operation::Max)?.apply(&input)?;
-/// assert_eq!(output.size(), vec![32, 64]);
-///
-/// // Same reduction done directly on the tensor using `ReduceFn` trait
-/// let output = input.reduce("t b c -> b c", Operation::Max)?;
-/// assert_eq!(output.size(), vec![32, 64]);
-/// # Ok(())
-/// # }
-/// ```
 #[derive(Debug)]
 pub struct Reduce {
     recipe: TransformRecipe,

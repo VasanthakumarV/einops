@@ -78,7 +78,7 @@ impl RepeatFn for Tensor {}
 mod tests {
     // TODO Add more tests
     use super::*;
-    use crate::{EinopsError, Operation};
+    use crate::EinopsError;
     use tch::{Device, Kind, Tensor};
 
     #[test]

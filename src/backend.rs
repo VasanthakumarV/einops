@@ -1,4 +1,4 @@
-#[cfg(feature = "torch")]
+#[cfg(feature = "tch-bindings")]
 mod torch;
 
 use crate::{EinopsError, Operation, Rearrange, Reduce, Repeat};
@@ -71,7 +71,7 @@ pub trait RepeatFn {
     }
 
     /// Apply repeat operation using the pattern and additional axes lengths attribute
-    fn repeat_with_lenghts(
+    fn repeat_with_lengths(
         &self,
         pattern: &str,
         axes_lengths: &[(&str, usize)],
