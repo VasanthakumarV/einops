@@ -6,7 +6,7 @@ inconsistencies please raise a github issue.
 
 _Unlike its python counterpart, caching the parsed expression has not been implemented yet. So
 when applying the same pattern multiple times, prefer_ `Rearrange::new(...)` _or_ `Rearrange::with_lengths(...)`
-_api, over the methods available through `RearrangeFn` like traits_
+_api, over the methods available through `RearrangeFn` like traits_.
 
 Flexible and powerful tensor operations for readable and reliable code.
 Currently only supports [tch](https://github.com/LaurentMazare/tch-rs).
@@ -23,7 +23,9 @@ einops = { version: "0.1", features: ["tch-bindings"] }
 ## Examples
 
 Einops provies three operations, they cover stacking, reshape, transposition,
-squeeze/unsqueeze, repeat, tile, concatenate and numerous reductions
+squeeze/unsqueeze, repeat, tile, concatenate and numerous reductions.
+
+For usage within a deep learning model look at the [examples](https://github.com/VasanthakumarV/einops/tree/main/examples) folder.
 
 ```rust
 // Tch specific imports
