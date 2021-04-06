@@ -25,7 +25,8 @@ pub struct TransformRecipe {
     // Permutation info of reduced tensor before adding any new axis
     axes_permutation: Vec<usize>,
     // Position where the new axes should appear and their size
-    added_axes: HashMap<usize, usize>,
+    //added_axes: HashMap<usize, usize>,
+    added_axes: Vec<(usize, usize)>,
     // Positions of output axis as per `elementary_axes_lengths`
     output_composite_axes: Vec<Vec<usize>>,
     reduction_type: Function,
@@ -198,7 +199,7 @@ impl TransformRecipe {
         let mut axes_permutation: Vec<usize> = vec![];
 
         // Stores the position and size of new axis that needs to be added
-        let mut added_axes: HashMap<usize, usize> = HashMap::new();
+        let mut added_axes: Vec<(usize, usize)> = vec![];
 
         right
             .composition
@@ -218,7 +219,7 @@ impl TransformRecipe {
                     // We update `axes_pos` with new axis info
                     axes_pos.insert(axis.name.clone(), pos);
 
-                    added_axes.insert(i, pos);
+                    added_axes.push((i, pos));
 
                     // We update `left.composition` with the information about
                     // the new axis that needs to be added in the output
@@ -407,17 +408,14 @@ impl TransformRecipe {
                 acc
             });
 
-        let mut added_axes: Vec<(usize, usize)> = self
+        let added_axes: Vec<(usize, usize)> = self
             .added_axes
             .iter()
             // `unwrap` is safe, because at the this, we should have already
             // figured all the size values
             .map(|(pos, pos_in_elementary)| (*pos, axes_lengths[*pos_in_elementary].unwrap()))
             .collect();
-
-        // NOTE Ordering the `added_axes` hashmap is necessary incase the new axes
-        // are incrementally created in the backend
-        added_axes.sort_by_key(|(pos, _)| *pos);
+        dbg!(&added_axes);
 
         Ok((init_shapes, added_axes, final_shapes))
     }

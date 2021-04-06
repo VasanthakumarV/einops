@@ -346,4 +346,75 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn rearrange_samples() -> Result<(), EinopsError> {
+        let tests: &[(&str, Option<&[(&str, usize)]>, Vec<usize>)] = &[
+            ("b c h w -> b h w c", None, vec![10, 30, 40, 20]),
+            ("b c h w -> b (c h w)", None, vec![10, 20 * 30 * 40]),
+            (
+                "b (c h1 w1) h w -> b c (h h1) (w w1)",
+                Some(&[("h1", 2), ("w1", 2)]),
+                vec![10, 5, 30 * 2, 40 * 2],
+            ),
+            (
+                "b c (h h1) (w w1) -> b (h1 w1 c) h w",
+                Some(&[("h1", 2), ("w1", 2)]),
+                vec![10, 20 * 4, 30 / 2, 40 / 2],
+            ),
+            (
+                "b1 sound b2 letter -> b1 b2 sound letter",
+                None,
+                vec![10, 30, 20, 40],
+            ),
+        ];
+
+        let input = Tensor::arange(10 * 20 * 30 * 40, (Kind::Float, Device::Cpu))
+            .reshape(&[10, 20, 30, 40]);
+
+        for (pattern, axes_lengths, expected) in tests {
+            let output = if let Some(lengths) = axes_lengths {
+                input.rearrange_with_lengths(pattern, lengths)?
+            } else {
+                input.rearrange(pattern)?
+            };
+
+            assert_eq!(&output.shape(), expected);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn reduce_samples() -> Result<(), EinopsError> {
+        let tests: &[(&str, Operation, Option<&[(&str, usize)]>, Vec<usize>)] = &[
+            (
+                "b c (h h1) (w w1) -> b c h w",
+                Operation::Max,
+                Some(&[("h1", 2), ("w1", 2)]),
+                vec![10, 20, 30 / 2, 40 / 2],
+            ),
+            (
+                "b c h w -> b c () ()",
+                Operation::Max,
+                None,
+                vec![10, 20, 1, 1],
+            ),
+        ];
+
+        let input = Tensor::arange(10 * 20 * 30 * 40, (Kind::Float, Device::Cpu))
+            .reshape(&[10, 20, 30, 40]);
+
+        for (pattern, operation, axes_lengths, expected) in tests {
+            let output = if let Some(lengths) = axes_lengths {
+                input.reduce_with_lengths(pattern, *operation, lengths)?
+            } else {
+                input.reduce(pattern, *operation)?
+            };
+
+            assert_eq!(&output.shape(), expected);
+        }
+
+        Ok(())
+    }
 }

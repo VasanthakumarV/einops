@@ -138,7 +138,7 @@ mod tests {
     }
 
     #[test]
-    fn tch_reduce_axes() {
+    fn tch_add_axes() {
         let tests = vec![(
             Tensor::arange(1 * 2 * 3, (Kind::Float, Device::Cpu)).reshape(&[1, 2, 3]),
             5,
