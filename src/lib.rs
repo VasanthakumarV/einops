@@ -97,7 +97,7 @@ pub enum Operation {
 
 /// Reader-friendly reordering of tensors. Includes the functionality of transpose
 /// (axes permutation), reshape, squeeze, unsqueeze and other operations
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Rearrange {
     recipe: TransformRecipe,
 }

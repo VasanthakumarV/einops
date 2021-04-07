@@ -1,4 +1,6 @@
 ![einops](https://github.com/VasanthakumarV/einops/workflows/CI/badge.svg)
+[![crates](https://img.shields.io/crates/v/einops)](https://crates.io/crates/einops)
+[![docs](https://img.shields.io/docsrs/einops)](https://docs.rs/einops)
 
 # Einops
 

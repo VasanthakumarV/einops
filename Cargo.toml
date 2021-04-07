@@ -3,6 +3,12 @@ name = "einops"
 version = "0.1.0"
 authors = ["VasanthakumarV <vasanth260m12@gmail.com>"]
 edition = "2018"
+description = "Simplistic API for deep learning tensor operations"
+license = "MIT OR Apache-2.0"
+keywords = ["deep-learning", "tensor", "tch"]
+categories = ["algorithms", "science", "mathematics"]
+exclude = [".github/"]
+repository = "https://github.com/VasanthakumarV/einops"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

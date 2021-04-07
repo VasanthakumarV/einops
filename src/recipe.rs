@@ -7,14 +7,14 @@ use crate::error::EinopsError;
 use crate::Operation;
 use parse::{Axis, ParsedExpression, ELLIPSIS};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Function {
     Rearrange,
     Repeat,
     Reduce(Operation),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TransformRecipe {
     // List of available size info
     elementary_axes_lengths: Vec<Option<usize>>,
