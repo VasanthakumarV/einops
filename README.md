@@ -1,3 +1,5 @@
+![einops](https://github.com/VasanthakumarV/einops/workflows/CI/badge.svg)
+
 # Einops
 
 This is a rust port of the incredible [einops](https://github.com/arogozhnikov/einops) library.
