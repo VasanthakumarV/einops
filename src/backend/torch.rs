@@ -25,11 +25,11 @@ impl Backend for Tensor {
 
         for &axis in axes.iter().rev() {
             output = match operation {
-                Operation::Min => output.min2(axis as i64, false).0,
-                Operation::Max => output.max2(axis as i64, false).0,
-                Operation::Sum => output.sum1(&[axis as i64], false, output.kind()),
-                Operation::Mean => output.mean1(&[axis as i64], false, output.kind()),
-                Operation::Prod => output.prod1(axis as i64, false, output.kind()),
+                Operation::Min => output.min_dim(axis as i64, false).0,
+                Operation::Max => output.max_dim(axis as i64, false).0,
+                Operation::Sum => output.sum_dim_intlist(&[axis as i64], false, output.kind()),
+                Operation::Mean => output.mean_dim(&[axis as i64], false, output.kind()),
+                Operation::Prod => output.prod_dim_int(axis as i64, false, output.kind()),
             };
         }
 

@@ -17,4 +17,4 @@ tch-bindings = ["tch"]
 
 [dependencies]
 thiserror = "1.0"
-tch = { version = "0.3", optional = true }
+tch = { version = "0.5", optional = true }
