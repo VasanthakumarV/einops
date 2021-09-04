@@ -158,7 +158,7 @@ impl ParsedExpression {
             }
         } else {
             // We try to parse the string as an integer
-            let size = usize::from_str(&current_ident);
+            let size = usize::from_str(current_ident);
 
             match size {
                 Ok(1) => {
@@ -185,7 +185,7 @@ impl ParsedExpression {
                     }
                 }
                 _ => {
-                    let (is_axis_name, reason) = ParsedExpression::check_axis_name(&current_ident);
+                    let (is_axis_name, reason) = ParsedExpression::check_axis_name(current_ident);
                     if !is_axis_name {
                         // `unwrap` is safe, because it will always have a value
                         // if the axis name is invalid
