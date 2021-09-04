@@ -21,7 +21,7 @@ Add the following to your `Cargo.toml` file,
 
 ```
 [dependencies]
-einops = { version: "0.1", features: ["tch-bindings"] }
+einops = "0.2"
 ```
 
 ## Examples
