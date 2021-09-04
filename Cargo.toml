@@ -1,6 +1,6 @@
 [package]
 name = "einops"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["VasanthakumarV <vasanth260m12@gmail.com>"]
 edition = "2018"
 description = "Simplistic API for deep learning tensor operations"
