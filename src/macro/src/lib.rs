@@ -20,6 +20,7 @@ mod rearrange {
     struct Element {
         tensor: syn::Ident,
         permute: Vec<usize>,
+        reshape: Vec<Vec<usize>>,
     }
 
     impl syn::parse::Parse for Element {
@@ -30,12 +31,14 @@ mod rearrange {
             Ok(Element {
                 permute: expression.permute,
                 tensor: input.parse::<syn::Ident>()?,
+                reshape: expression.reshape,
             })
         }
     }
 
     struct Expression {
         permute: Vec<usize>,
+        reshape: Vec<Vec<usize>>,
     }
 
     impl syn::parse::Parse for Expression {
@@ -44,27 +47,62 @@ mod rearrange {
             while !input.peek(syn::Token![->]) {
                 left.push(input.parse::<syn::Ident>()?.to_string());
             }
+
             input.parse::<syn::Token![->]>()?;
+
             let mut permute = Vec::new();
+            let mut reshape: Vec<Vec<usize>> = Vec::new();
+            let mut index: usize = 0;
             while !input.is_empty() {
-                let ident = input.parse::<syn::Ident>()?.to_string();
-                permute.push(left.binary_search(&ident).unwrap());
+                if input.peek(syn::token::Paren) {
+                    let content;
+                    syn::parenthesized!(content in input);
+
+                    let mut reshape_inner = Vec::new();
+
+                    while !content.is_empty() {
+                        let ident = content.parse::<syn::Ident>()?.to_string();
+                        permute.push(left.binary_search(&ident).unwrap());
+                        reshape_inner.push(index);
+
+                        index += 1;
+                    }
+
+                    reshape.push(reshape_inner);
+                } else {
+                    let ident = input.parse::<syn::Ident>()?.to_string();
+                    permute.push(left.binary_search(&ident).unwrap());
+                    reshape.push(vec![index]);
+
+                    index += 1;
+                }
             }
 
-            Ok(Expression { permute })
+            Ok(Expression { permute, reshape })
         }
     }
 
     impl quote::ToTokens for Element {
         fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
             let tensor = &self.tensor;
-            let shapes = self.permute.iter();
+            let shapes = &self.permute;
+            let reshape = &self.reshape;
 
-            let code = quote! {
-                crate::backend::Backend::transpose(&#tensor, &[
+            let code = quote! {{
+                use einops::Backend;
+
+                let #tensor = Backend::transpose(&#tensor, &[
                     #(#shapes),*
-                ])
-            };
+                ]);
+
+                let shape = Backend::shape(&#tensor);
+                let #tensor = Backend::reshape(&#tensor, &[
+                    #([#(shape[#reshape]),*].iter().product()),*
+                ]);
+
+                #tensor
+            }};
+
             code.to_tokens(tokens);
         }
     }

@@ -75,7 +75,9 @@ mod backend;
 mod error;
 mod recipe;
 
-use backend::Backend;
+pub use einops_macro::rearrange;
+
+pub use backend::Backend;
 pub use backend::{RearrangeFn, ReduceFn, RepeatFn};
 pub use error::EinopsError;
 use recipe::{Function, TransformRecipe};
@@ -194,13 +196,6 @@ impl Repeat {
 mod tests {
     use super::*;
     use tch::{Device, IndexOp, Kind, Tensor};
-
-    #[test]
-    fn einops_macro() {
-        let input = Tensor::arange(2 * 3 * 4, (Kind::Float, Device::Cpu)).reshape(&[2, 3, 4]);
-        let output = einops_macro::rearrange!("a b c -> b c a", input);
-        dbg!(&output);
-    }
 
     #[test]
     fn collapsed_ellipsis_error() {
