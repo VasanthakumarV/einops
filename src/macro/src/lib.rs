@@ -8,12 +8,11 @@ pub fn rearrange(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 mod rearrange {
     use std::collections::HashMap;
 
-    use quote::quote;
+    use quote::{format_ident, quote};
     use syn::{parse::ParseStream, token};
 
     pub fn rearrange(input: proc_macro2::TokenStream) -> syn::Result<proc_macro2::TokenStream> {
         let parsed_expression: ParsedExpression = syn::parse2(input)?;
-        dbg!(&parsed_expression);
         let code = quote! { #parsed_expression};
         Ok(code)
     }
@@ -38,9 +37,9 @@ mod rearrange {
 
     #[derive(Debug)]
     struct Expression {
+        left_expression: Vec<LeftExpression>,
         permute: Vec<Index>,
-        decomposition: Vec<LeftExpression>,
-        composition: Vec<RightExpression>,
+        right_expression: Vec<RightExpression>,
     }
 
     #[derive(Debug)]
@@ -173,9 +172,9 @@ mod rearrange {
                 );
 
             Ok(Expression {
+                left_expression,
                 permute,
-                decomposition: left_expression,
-                composition: right_expression,
+                right_expression,
             })
         }
     }
@@ -269,7 +268,6 @@ mod rearrange {
         Ok((RightExpression::Combined { from, to }, permute))
     }
 
-
     fn parse_identifier(input: ParseStream) -> syn::Result<(String, Option<usize>)> {
         let name = input.parse::<syn::Ident>()?.to_string();
 
@@ -286,8 +284,90 @@ mod rearrange {
 
     impl quote::ToTokens for ParsedExpression {
         fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-            todo!();
-            //let tensor = &self.tensor;
+            let ParsedExpression {
+                tensor: ref tensor_ident,
+                ref expression,
+            } = self;
+            let Expression {
+                ref left_expression,
+                ref permute,
+                ref right_expression,
+            } = expression;
+
+            let shape_ident = format_ident!("{}_{}", tensor_ident, "shape");
+            let ignored_len_ident = format_ident!("{}", "ignored_len");
+
+            let ignored_len = match left_expression.last().unwrap() {
+                LeftExpression::Named {
+                    index: Index::Unknown(i),
+                    ..
+                }
+                | LeftExpression::Derived {
+                    index: Index::Unknown(i),
+                    ..
+                }
+                | LeftExpression::Ignore(i) => {
+                    quote!(let #ignored_len_ident = #shape_ident.len() - #i;)
+                }
+                _ => proc_macro2::TokenStream::new(),
+            };
+
+            let (known_indices, ignored_indices, unknown_indices) = left_expression.iter().fold(
+                (Vec::new(), proc_macro2::TokenStream::new(), Vec::new()),
+                |(mut known_indices, mut ignored_indices, mut unknown_indices), expression| {
+                    match expression {
+                        LeftExpression::Named {
+                            index: Index::Known(_),
+                            shape: Some(size),
+                            ..
+                        } => known_indices.push(quote!(#size)),
+                        LeftExpression::Named {
+                            index: Index::Known(i),
+                            ..
+                        } => known_indices.push(quote!(#shape_ident[#i])),
+                        LeftExpression::Derived {
+                            index: Index::Known(i),
+                            shape_calc,
+                            ..
+                        } => known_indices.push(quote!(#shape_ident[#i] / #shape_calc)),
+                        LeftExpression::Ignore(i) => {
+                            ignored_indices = quote!(
+                                (#i..(#i + #ignored_len_ident)).into_iter().map(|i| #shape_ident[i])
+                            );
+                        }
+                        LeftExpression::Named {
+                            index: Index::Unknown(i),
+                            ..
+                        } => unknown_indices.push(quote!(#shape_ident[#i + #ignored_len_ident -1])),
+                        LeftExpression::Derived {
+                            index: Index::Unknown(i),
+                            shape_calc,
+                            ..
+                        } => known_indices
+                            .push(quote!(#shape_ident[#i + #ignored_len_ident - 1] / #shape_calc)),
+                        _ => todo!(),
+                    }
+                    (known_indices, ignored_indices, unknown_indices)
+                },
+            );
+
+            let code = quote! {{
+                use einops::Backend;
+
+                let #shape_ident = Backend::shape(&#tensor_ident);
+
+                #ignored_len
+                &[#(#known_indices),*];
+                #ignored_indices;
+                &[#(#unknown_indices),*];
+
+                //let #tensor_ident = Backend::reshape(&#tensor_ident, &[#(#decompose_iter),*]);
+            }};
+
+            code.to_tokens(tokens);
+
+            //todo!();
+
             //let shapes = &self.permute;
             //let reshape = &self.reshape;
             //let explode = &self.explode;
