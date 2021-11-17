@@ -6,180 +6,323 @@ pub fn rearrange(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 mod rearrange {
+    use std::collections::HashMap;
+
     use quote::quote;
+    use syn::{parse::ParseStream, token};
 
     pub fn rearrange(input: proc_macro2::TokenStream) -> syn::Result<proc_macro2::TokenStream> {
-        let element: Element = syn::parse2(input)?;
-
-        let code = quote! { #element };
-
+        let parsed_expression: ParsedExpression = syn::parse2(input)?;
+        dbg!(&parsed_expression);
+        let code = quote! { #parsed_expression};
         Ok(code)
     }
 
     #[derive(Debug)]
-    struct Element {
+    struct ParsedExpression {
         tensor: syn::Ident,
-        permute: Vec<usize>,
-        reshape: Vec<Vec<usize>>,
-        explode: Vec<Explode>,
+        expression: Expression,
     }
 
-    impl syn::parse::Parse for Element {
+    impl syn::parse::Parse for ParsedExpression {
         fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
             let expression: Expression = input.parse::<syn::LitStr>()?.parse()?;
             input.parse::<syn::Token![,]>()?;
 
-            Ok(Element {
-                permute: expression.permute,
+            Ok(Self {
                 tensor: input.parse::<syn::Ident>()?,
-                reshape: expression.reshape,
-                explode: expression.explode,
+                expression,
             })
         }
-    }
-
-    struct Expression {
-        permute: Vec<usize>,
-        reshape: Vec<Vec<usize>>,
-        explode: Vec<Explode>,
     }
 
     #[derive(Debug)]
-    enum Explode {
-        Derived { index: usize, shape: Option<usize> },
-        Shape(usize),
-        Index(usize),
+    struct Expression {
+        permute: Vec<Index>,
+        decomposition: Vec<LeftExpression>,
+        composition: Vec<RightExpression>,
+    }
+
+    #[derive(Debug)]
+    enum LeftExpression {
+        Derived {
+            name: String,
+            index: Index,
+            shape_calc: usize,
+        },
+        Named {
+            name: String,
+            index: Index,
+            shape: Option<usize>,
+        },
+        Ignore(usize),
+    }
+
+    #[derive(Debug)]
+    enum RightExpression {
+        Individual(Index),
+        Combined { from: Index, to: Option<Index> },
+        Ignore(usize),
+    }
+
+    #[derive(Debug, Clone)]
+    enum Index {
+        Known(usize),
+        Unknown(usize),
+        Range(usize),
     }
 
     impl syn::parse::Parse for Expression {
-        fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-            let mut left = Vec::new();
-            let mut explode = Vec::new();
-            let mut index: usize = 0;
-            while !input.peek(syn::Token![->]) {
-                if input.peek(syn::token::Paren) {
-                    let content;
-                    syn::parenthesized!(content in input);
-
-                    let mut derived_index: Option<usize> = None;
-                    let mut run_mul: usize = 1;
-                    let mut flat_index = index;
-
-                    while !content.is_empty() {
-                        left.push(content.parse::<syn::Ident>()?.to_string());
-
-                        if content.peek(syn::Token![:]) {
-                            content.parse::<syn::Token![:]>()?;
-                            let shape = content.parse::<syn::LitInt>()?;
-                            let shape = shape.base10_parse::<usize>()?;
-                            explode.push(Explode::Shape(shape));
-
-                            run_mul *= shape;
-                        } else {
-                            explode.push(Explode::Derived { index, shape: None });
-
-                            derived_index = Some(flat_index);
+        fn parse(input: ParseStream) -> syn::Result<Self> {
+            let (left_expression, _) = (0..)
+                .into_iter()
+                .take_while(|_| {
+                    if input.peek(syn::Token![->]) {
+                        input.parse::<syn::Token![->]>().unwrap();
+                        return false;
+                    }
+                    true
+                })
+                .fold(
+                    (
+                        Vec::new(),
+                        Box::new(Index::Known) as Box<dyn Fn(usize) -> Index>,
+                    ),
+                    |(mut left_expression, mut index_fn), i| {
+                        if input.peek(syn::token::Paren) {
+                            let content_expression =
+                                parse_left_parenthesized(input, index_fn(i)).unwrap();
+                            left_expression.extend(content_expression);
+                        } else if input.peek(syn::Ident) {
+                            let (name, shape) = parse_identifier(input).unwrap();
+                            left_expression.push(LeftExpression::Named {
+                                name,
+                                shape,
+                                index: index_fn(i),
+                            });
+                        } else if input.peek(syn::LitInt) {
+                            todo!("parse_int");
+                        } else if input.peek(syn::Token![..]) {
+                            input.parse::<syn::Token![..]>().unwrap();
+                            left_expression.push(LeftExpression::Ignore(i));
+                            index_fn = Box::new(Index::Unknown);
                         }
+                        (left_expression, index_fn)
+                    },
+                );
 
-                        flat_index += 1;
-                    }
-
-                    if let Some(derived_index) = derived_index {
-                        if let Explode::Derived { shape, .. } =
-                            explode.get_mut(derived_index).unwrap()
-                        {
-                            *shape = Some(run_mul);
+            let positions = left_expression.iter().enumerate().fold(
+                HashMap::new(),
+                |mut map, (i, expression)| {
+                    match expression {
+                        LeftExpression::Ignore(_) => map.insert("..".to_string(), Index::Range(i)),
+                        LeftExpression::Named {
+                            name,
+                            index: Index::Known(_),
+                            ..
                         }
-                    }
+                        | LeftExpression::Derived {
+                            name,
+                            index: Index::Known(_),
+                            ..
+                        } => map.insert(name.clone(), Index::Known(i)),
+                        LeftExpression::Named {
+                            name,
+                            index: Index::Unknown(_),
+                            ..
+                        }
+                        | LeftExpression::Derived {
+                            name,
+                            index: Index::Unknown(_),
+                            ..
+                        } => map.insert(name.clone(), Index::Unknown(i)),
+                        _ => todo!(),
+                    };
+                    map
+                },
+            );
 
-                    index += 1;
-                } else {
-                    left.push(input.parse::<syn::Ident>()?.to_string());
-                    explode.push(Explode::Index(index));
-
-                    index += 1;
-                }
-            }
-
-            input.parse::<syn::Token![->]>()?;
-
-            let mut permute = Vec::new();
-            let mut reshape: Vec<Vec<usize>> = Vec::new();
-            let mut index: usize = 0;
-            while !input.is_empty() {
-                if input.peek(syn::token::Paren) {
-                    let content;
-                    syn::parenthesized!(content in input);
-
-                    let mut reshape_inner = Vec::new();
-
-                    while !content.is_empty() {
-                        let ident = content.parse::<syn::Ident>()?.to_string();
-                        permute.push(left.binary_search(&ident).unwrap());
-                        reshape_inner.push(index);
-
-                        index += 1;
-                    }
-
-                    reshape.push(reshape_inner);
-                } else {
-                    let ident = input.parse::<syn::Ident>()?.to_string();
-                    permute.push(left.binary_search(&ident).unwrap());
-                    reshape.push(vec![index]);
-
-                    index += 1;
-                }
-            }
+            let (right_expression, permute, _) =
+                (0..).into_iter().take_while(|_| !input.is_empty()).fold(
+                    (
+                        Vec::new(),
+                        Vec::new(),
+                        Box::new(Index::Known) as Box<dyn Fn(usize) -> Index>,
+                    ),
+                    |(mut right_expression, mut permute, mut index_fn), i| {
+                        if input.peek(token::Paren) {
+                            let (combined, combined_permute) =
+                                parse_right_parenthesized(input, i, &mut index_fn, &positions)
+                                    .unwrap();
+                            permute.extend(combined_permute);
+                            right_expression.push(combined);
+                        } else if input.peek(syn::Ident) {
+                            let (name, _) = parse_identifier(input).unwrap();
+                            permute.push(positions.get(&name).unwrap().clone());
+                            right_expression.push(RightExpression::Individual(index_fn(i)))
+                        } else if input.peek(syn::LitInt) {
+                            todo!();
+                        } else if input.peek(syn::Token![..]) {
+                            input.parse::<syn::Token![..]>().unwrap();
+                            right_expression.push(RightExpression::Ignore(i));
+                            permute.push(positions.get("..").unwrap().clone());
+                            index_fn = Box::new(Index::Unknown);
+                        }
+                        (right_expression, permute, index_fn)
+                    },
+                );
 
             Ok(Expression {
                 permute,
-                reshape,
-                explode,
+                decomposition: left_expression,
+                composition: right_expression,
             })
         }
     }
 
-    impl quote::ToTokens for Element {
-        fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-            let tensor = &self.tensor;
-            let shapes = &self.permute;
-            let reshape = &self.reshape;
-            let explode = &self.explode;
+    fn parse_left_parenthesized(
+        input: ParseStream,
+        index: Index,
+    ) -> syn::Result<Vec<LeftExpression>> {
+        let content;
+        syn::parenthesized!(content in input);
 
-            let v: Vec<proc_macro2::TokenStream> = explode
-                .iter()
-                .map(|e| {
-                    let a = match e {
-                        Explode::Derived { index, shape } => {
-                            let shape = shape.unwrap();
-                            return quote!(Backend::shape(&#tensor)[#index] / #shape);
+        let mut content_expression = Vec::new();
+
+        let (derived_name, derived_index, running_mul) =
+            (0..).into_iter().take_while(|_| !content.is_empty()).fold(
+                (None, None, 1),
+                |(mut derived_name, mut derived_index, mut running_mul), i| {
+                    if content.peek(syn::Ident) {
+                        let (name, shape) = parse_identifier(&content).unwrap();
+                        if let Some(size) = shape {
+                            running_mul *= size;
+                            content_expression.push(LeftExpression::Named {
+                                name,
+                                index: index.clone(),
+                                shape: Some(size),
+                            });
+                        } else {
+                            derived_name = Some(name.clone());
+                            derived_index = Some(i);
                         }
-                        Explode::Shape(shape) => quote!(#shape),
-                        Explode::Index(index) => quote!(Backend::shape(&#tensor)[#index]),
-                        _ => todo!(),
-                    };
-                    return a;
-                })
-                .collect();
+                    }
+                    (derived_name, derived_index, running_mul)
+                },
+            );
 
-            let code = quote! {{
-                use einops::Backend;
+        if let Some(derived_index) = derived_index {
+            content_expression.insert(
+                derived_index,
+                LeftExpression::Derived {
+                    name: derived_name.unwrap(),
+                    index,
+                    shape_calc: running_mul,
+                },
+            );
+        }
 
-                let #tensor = Backend::reshape(&#tensor, &[#(#v),*]);
+        Ok(content_expression)
+    }
 
-                let #tensor = Backend::transpose(&#tensor, &[
-                    #(#shapes),*
-                ]);
+    fn parse_right_parenthesized(
+        input: ParseStream,
+        start_index: usize,
+        index_fn: &mut Box<dyn Fn(usize) -> Index>,
+        positions: &HashMap<String, Index>,
+    ) -> syn::Result<(RightExpression, Vec<Index>)> {
+        let content;
+        syn::parenthesized!(content in input);
 
-                let shape = Backend::shape(&#tensor);
-                let #tensor = Backend::reshape(&#tensor, &[
-                    #([#(shape[#reshape]),*].iter().product()),*
-                ]);
+        let mut permute = Vec::new();
 
-                #tensor
-            }};
+        let from = if content.peek(syn::Token![..]) {
+            content.parse::<syn::Token![..]>().unwrap();
+            *index_fn = Box::new(Index::Unknown);
+            permute.push(positions.get("..").unwrap().clone());
+            Index::Range(start_index)
+        } else if content.peek(syn::Ident) {
+            let (name, _) = parse_identifier(&content).unwrap();
+            permute.push(positions.get(&name).unwrap().clone());
+            index_fn(start_index)
+        } else {
+            todo!();
+        };
 
-            code.to_tokens(tokens);
+        let to = (1..)
+            .into_iter()
+            .take_while(|_| !content.is_empty())
+            .fold(None, |mut to, i| {
+                if content.peek(syn::Ident) {
+                    let (name, _) = parse_identifier(&content).unwrap();
+                    permute.push(positions.get(&name).unwrap().clone());
+                    to = Some(index_fn(i + start_index));
+                } else if content.peek(syn::Token![..]) {
+                    content.parse::<syn::Token![..]>().unwrap();
+                    permute.push(positions.get("..").unwrap().clone());
+                    to = Some(Index::Range(i + start_index));
+                    *index_fn = Box::new(Index::Unknown);
+                }
+                to
+            });
+
+        Ok((RightExpression::Combined { from, to }, permute))
+    }
+
+
+    fn parse_identifier(input: ParseStream) -> syn::Result<(String, Option<usize>)> {
+        let name = input.parse::<syn::Ident>()?.to_string();
+
+        let shape = if input.peek(syn::Token![:]) {
+            input.parse::<syn::Token![:]>()?;
+            let shape = input.parse::<syn::LitInt>()?;
+            Some(shape.base10_parse::<usize>()?)
+        } else {
+            None
+        };
+
+        Ok((name, shape))
+    }
+
+    impl quote::ToTokens for ParsedExpression {
+        fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+            todo!();
+            //let tensor = &self.tensor;
+            //let shapes = &self.permute;
+            //let reshape = &self.reshape;
+            //let explode = &self.explode;
+
+            //let v: Vec<proc_macro2::TokenStream> = explode
+            //.iter()
+            //.map(|e| match e {
+            //Explode::Derived { index, shape } => {
+            //let shape = shape.unwrap();
+            //return quote!(Backend::shape(&#tensor)[#index] / #shape);
+            //}
+            //Explode::Shape(shape) => quote!(#shape),
+            //Explode::Index(index) => quote!(Backend::shape(&#tensor)[#index]),
+            //_ => todo!(),
+            //})
+            //.collect();
+
+            //let code = quote! {{
+            //use einops::Backend;
+
+            //let #tensor = Backend::reshape(&#tensor, &[#(#v),*]);
+
+            //let #tensor = Backend::transpose(&#tensor, &[
+            //#(#shapes),*
+            //]);
+
+            //let shape = Backend::shape(&#tensor);
+            //let #tensor = Backend::reshape(&#tensor, &[
+            //#([#(shape[#reshape]),*].iter().product()),*
+            //]);
+
+            //#tensor
+            //}};
+
+            //code.to_tokens(tokens);
         }
     }
 }
