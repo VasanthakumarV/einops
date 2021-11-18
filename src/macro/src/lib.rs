@@ -54,14 +54,12 @@ mod rearrange {
             index: Index,
             shape: Option<usize>,
         },
-        Ignore(usize),
     }
 
     #[derive(Debug)]
     enum RightExpression {
         Individual(Index),
         Combined { from: Index, to: Option<Index> },
-        Ignore(usize),
     }
 
     #[derive(Debug, Clone)]
@@ -103,7 +101,11 @@ mod rearrange {
                             todo!("parse_int");
                         } else if input.peek(syn::Token![..]) {
                             input.parse::<syn::Token![..]>().unwrap();
-                            left_expression.push(LeftExpression::Ignore(i));
+                            left_expression.push(LeftExpression::Named {
+                                name: "..".to_string(),
+                                index: Index::Range(i),
+                                shape: None,
+                            });
                             index_fn = Box::new(Index::Unknown);
                         }
                         (left_expression, index_fn)
@@ -114,27 +116,31 @@ mod rearrange {
                 HashMap::new(),
                 |mut map, (i, expression)| {
                     match expression {
-                        LeftExpression::Ignore(_) => map.insert("..".to_string(), Index::Range(i)),
                         LeftExpression::Named {
                             name,
                             index: Index::Known(_),
-                            ..
+                            shape: _,
                         }
                         | LeftExpression::Derived {
                             name,
                             index: Index::Known(_),
-                            ..
+                            shape_calc: _,
                         } => map.insert(name.clone(), Index::Known(i)),
                         LeftExpression::Named {
                             name,
                             index: Index::Unknown(_),
-                            ..
+                            shape: _,
                         }
                         | LeftExpression::Derived {
                             name,
                             index: Index::Unknown(_),
-                            ..
+                            shape_calc: _,
                         } => map.insert(name.clone(), Index::Unknown(i)),
+                        LeftExpression::Named {
+                            name,
+                            index: Index::Range(_),
+                            shape: _,
+                        } => map.insert(name.clone(), Index::Range(i)),
                         _ => todo!(),
                     };
                     map
@@ -163,7 +169,7 @@ mod rearrange {
                             todo!();
                         } else if input.peek(syn::Token![..]) {
                             input.parse::<syn::Token![..]>().unwrap();
-                            right_expression.push(RightExpression::Ignore(i));
+                            right_expression.push(RightExpression::Individual(Index::Range(i)));
                             permute.push(positions.get("..").unwrap().clone());
                             index_fn = Box::new(Index::Unknown);
                         }
@@ -306,7 +312,10 @@ mod rearrange {
                     index: Index::Unknown(i),
                     ..
                 }
-                | LeftExpression::Ignore(i) => {
+                | LeftExpression::Named {
+                    index: Index::Range(i),
+                    ..
+                } => {
                     quote!(let #ignored_len_ident = #shape_ident.len() - #i;)
                 }
                 _ => proc_macro2::TokenStream::new(),
@@ -330,7 +339,10 @@ mod rearrange {
                             shape_calc,
                             ..
                         } => known_indices.push(quote!(#shape_ident[#i] / #shape_calc)),
-                        LeftExpression::Ignore(i) => {
+                        LeftExpression::Named {
+                            index: Index::Range(i),
+                            ..
+                        } => {
                             ignored_indices = quote!(
                                 (#i..(#i + #ignored_len_ident)).into_iter().map(|i| #shape_ident[i])
                             );
@@ -343,7 +355,7 @@ mod rearrange {
                             index: Index::Unknown(i),
                             shape_calc,
                             ..
-                        } => known_indices
+                        } => unknown_indices
                             .push(quote!(#shape_ident[#i + #ignored_len_ident - 1] / #shape_calc)),
                         _ => todo!(),
                     }
@@ -351,15 +363,48 @@ mod rearrange {
                 },
             );
 
+            let decomposition_shape = match (
+                known_indices.is_empty(),
+                ignored_indices.is_empty(),
+                unknown_indices.is_empty(),
+            ) {
+                (false, true, true) => {
+                    quote!([#(#known_indices),*])
+                }
+                (false, false, true) => quote!(
+                    [#(#known_indices),*]
+                        .into_iter()
+                        .chain(#ignored_indices)
+                        .into_iter()
+                        .collect::<Vec<_>>()
+                ),
+                (false, false, false) => quote!(
+                    [#(#known_indices),*]
+                        .into_iter()
+                        .chain(#ignored_indices)
+                        .chain([#(#unknown_indices),*].into_iter())
+                        .into_iter()
+                        .collect::<Vec<_>>()
+                ),
+                (true, false, false) => quote!(
+                    #ignored_indices
+                        .chain([#(#unknown_indices),*].into_iter())
+                        .into_iter()
+                        .collect::<Vec<_>>()
+                ),
+                _ => todo!(),
+            };
+
             let code = quote! {{
                 use einops::Backend;
 
                 let #shape_ident = Backend::shape(&#tensor_ident);
 
                 #ignored_len
-                &[#(#known_indices),*];
-                #ignored_indices;
-                &[#(#unknown_indices),*];
+
+                let #tensor_ident = Backend::reshape(&#tensor_ident, &#decomposition_shape);
+
+                #tensor_ident
 
                 //let #tensor_ident = Backend::reshape(&#tensor_ident, &[#(#decompose_iter),*]);
             }};
