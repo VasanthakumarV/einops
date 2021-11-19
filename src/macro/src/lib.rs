@@ -350,7 +350,9 @@ mod rearrange {
                         LeftExpression::Named {
                             index: Index::Unknown(i),
                             ..
-                        } => unknown_indices.push(quote!(#shape_ident[#i + #ignored_len_ident -1])),
+                        } => {
+                            unknown_indices.push(quote!(#shape_ident[#i + #ignored_len_ident - 1]))
+                        }
                         LeftExpression::Derived {
                             index: Index::Unknown(i),
                             shape_calc,
@@ -395,6 +397,82 @@ mod rearrange {
                 _ => todo!(),
             };
 
+            let (before_ignored, ignored_permute, after_ignored, _) = permute.iter().fold(
+                (
+                    Vec::new(),
+                    proc_macro2::TokenStream::new(),
+                    Vec::new(),
+                    false,
+                ),
+                |(
+                    mut before_ignored,
+                    mut ignored_permute,
+                    mut after_ignored,
+                    mut is_after_ignored,
+                ),
+                 p| {
+                    match p {
+                        Index::Known(index) => {
+                            if is_after_ignored {
+                                after_ignored.push(quote!(#index));
+                            } else {
+                                before_ignored.push(quote!(#index));
+                            }
+                        }
+                        Index::Range(index) => {
+                            is_after_ignored = true;
+                            ignored_permute = quote!(
+                                (#index..(#index + #ignored_len_ident)).into_iter()
+                            )
+                        }
+                        Index::Unknown(index) => {
+                            if is_after_ignored {
+                                after_ignored.push(quote!(#index + #ignored_len_ident - 1));
+                            } else {
+                                before_ignored.push(quote!(#index + #ignored_len_ident - 1));
+                            }
+                        }
+                    };
+                    (
+                        before_ignored,
+                        ignored_permute,
+                        after_ignored,
+                        is_after_ignored,
+                    )
+                },
+            );
+
+            let permute_indices = match (
+                before_ignored.is_empty(),
+                ignored_permute.is_empty(),
+                after_ignored.is_empty(),
+            ) {
+                (false, true, true) => quote!([#(#before_ignored),*]),
+                (false, false, true) => quote!(
+                    [#(#before_ignored),*]
+                        .into_iter()
+                        .chain(#ignored_permute)
+                        .into_iter()
+                        .collect::<Vec<_>>()
+                ),
+                (false, false, false) => quote!(
+                    [#(#before_ignored),*]
+                        .into_iter()
+                        .chain(#ignored_permute)
+                        .chain([#(#after_ignored),*].into_iter())
+                        .into_iter()
+                        .collect::<Vec<_>>()
+
+                ),
+                (true, false, false) => quote!(
+                    #ignored_permute
+                        .chain([#(#after_ignored),*].into_iter())
+                        .into_iter()
+                        .collect::<Vec<_>>()
+                ),
+                _ => todo!(),
+            };
+
             let code = quote! {{
                 use einops::Backend;
 
@@ -403,6 +481,8 @@ mod rearrange {
                 #ignored_len
 
                 let #tensor_ident = Backend::reshape(&#tensor_ident, &#decomposition_shape);
+
+                let #tensor_ident = Backend::transpose(&#tensor_ident, &#permute_indices);
 
                 #tensor_ident
 
