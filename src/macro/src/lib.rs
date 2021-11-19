@@ -411,13 +411,16 @@ mod rearrange {
                     mut is_after_ignored,
                 ),
                  p| {
+                    let mut insert_index = |index| {
+                        if is_after_ignored {
+                            after_ignored.push(index);
+                        } else {
+                            before_ignored.push(index);
+                        }
+                    };
                     match p {
                         Index::Known(index) => {
-                            if is_after_ignored {
-                                after_ignored.push(quote!(#index));
-                            } else {
-                                before_ignored.push(quote!(#index));
-                            }
+                            insert_index(quote!(#index));
                         }
                         Index::Range(index) => {
                             is_after_ignored = true;
@@ -426,11 +429,7 @@ mod rearrange {
                             )
                         }
                         Index::Unknown(index) => {
-                            if is_after_ignored {
-                                after_ignored.push(quote!(#index + #ignored_len_ident - 1));
-                            } else {
-                                before_ignored.push(quote!(#index + #ignored_len_ident - 1));
-                            }
+                            insert_index(quote!(#index + #ignored_len_ident - 1));
                         }
                     };
                     (
@@ -473,6 +472,139 @@ mod rearrange {
                 _ => todo!(),
             };
 
+            let (before_ignored, ignored, after_ignored, _) = right_expression.iter().fold(
+                (
+                    Vec::new(),
+                    proc_macro2::TokenStream::new(),
+                    Vec::new(),
+                    false,
+                ),
+                |(mut before_ignored, mut ignored, mut after_ignored, mut is_after_ignored),
+                 expression| {
+                    let mut insert_shape = |shape| {
+                        if is_after_ignored {
+                            after_ignored.push(shape);
+                        } else {
+                            before_ignored.push(shape);
+                        }
+                    };
+                    match expression {
+                        RightExpression::Individual(Index::Known(index))
+                        | RightExpression::Combined {
+                            from: Index::Known(index),
+                            to: None,
+                        } => {
+                            let shape = quote!(#shape_ident[#index]);
+                            insert_shape(shape);
+                        }
+                        RightExpression::Individual(Index::Unknown(index))
+                        | RightExpression::Combined {
+                            from: Index::Unknown(index),
+                            to: None,
+                        } => {
+                            let shape = quote!(
+                                #shape_ident[#index + #ignored_len_ident - 1]
+                            );
+                            insert_shape(shape);
+                        }
+                        RightExpression::Individual(Index::Range(index)) => {
+                            ignored = quote!(
+                                (#index..(#index + #ignored_len_ident))
+                                    .into_iter().map(|i| #shape_ident[i])
+                            );
+                            is_after_ignored = true;
+                        }
+                        RightExpression::Combined {
+                            from: Index::Range(index),
+                            to: None,
+                        } => {
+                            let shape = quote!(
+                                (#index..(#index + #ignored_len_ident))
+                                    .into_iter().map(|i| #shape_ident[i]).product()
+                            );
+                            insert_shape(shape);
+                        }
+                        RightExpression::Combined {
+                            from: Index::Known(from_index),
+                            to: Some(Index::Known(to_index)),
+                        } => {
+                            let shape = quote!(
+                                (#from_index..=#to_index)
+                                    .into_iter().map(|i| #shape_ident[i]).product()
+                            );
+                            insert_shape(shape);
+                        }
+                        RightExpression::Combined {
+                            from: Index::Known(from_index),
+                            to: Some(Index::Unknown(to_index)),
+                        }
+                        | RightExpression::Combined {
+                            from: Index::Known(from_index),
+                            to: Some(Index::Range(to_index)),
+                        } => {
+                            let shape = quote!(
+                                (#from_index..(#to_index + #ignored_len_ident))
+                                    .into_iter().map(|i| #shape_ident[i]).product()
+                            );
+                            insert_shape(shape);
+                        }
+                        RightExpression::Combined {
+                            from: Index::Range(from_index),
+                            to: Some(Index::Unknown(to_index)),
+                        } => {
+                            let shape = quote!(
+                                (#from_index..=(#to_index + #ignored_len_ident))
+                                    .into_iter().map(|i| #shape_ident[i]).product()
+                            );
+                            insert_shape(shape);
+                        }
+                        RightExpression::Combined {
+                            from: Index::Unknown(from_index),
+                            to: Some(Index::Unknown(to_index)),
+                        } => {
+                            let shape = quote!(
+                                ((#from_index + #ignored_len_ident - 1)..(#to_index + #ignored_len_ident))
+                                    .into_iter().map(|i| #shape_ident[i]).product()
+                            );
+                            insert_shape(shape);
+                        }
+                        _ => todo!("No"),
+                    }
+                    (before_ignored, ignored, after_ignored, is_after_ignored)
+                },
+            );
+
+            let composition_shape = match (
+                before_ignored.is_empty(),
+                ignored.is_empty(),
+                after_ignored.is_empty(),
+            ) {
+                (false, true, true) => quote!([#(#before_ignored),*]),
+                (false, false, true) => quote!(
+                    [#(#before_ignored),*]
+                        .into_iter()
+                        .chain(#ignored)
+                        .into_iter()
+                        .collect::<Vec<_>>()
+                ),
+                (false, false, false) => quote!(
+                    [#(#before_ignored),*]
+                        .into_iter()
+                        .chain(#ignored)
+                        .chain([#(#after_ignored),*].into_iter())
+                        .into_iter()
+                        .collect::<Vec<_>>()
+
+                ),
+                (true, false, false) => quote!(
+                    #ignored
+                        .chain([#(#after_ignored),*].into_iter())
+                        .into_iter()
+                        .collect::<Vec<_>>()
+                ),
+                _ => todo!(),
+            };
+
             let code = quote! {{
                 use einops::Backend;
 
@@ -483,6 +615,10 @@ mod rearrange {
                 let #tensor_ident = Backend::reshape(&#tensor_ident, &#decomposition_shape);
 
                 let #tensor_ident = Backend::transpose(&#tensor_ident, &#permute_indices);
+
+                let #shape_ident = Backend::shape(&#tensor_ident);
+
+                let #tensor_ident = Backend::reshape(&#tensor_ident, &#composition_shape);
 
                 #tensor_ident
 
