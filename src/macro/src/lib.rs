@@ -39,6 +39,7 @@ mod rearrange {
     struct Expression {
         left_expression: Vec<LeftExpression>,
         permute: Vec<Index>,
+        repeat: Vec<(Index, usize)>,
         right_expression: Vec<RightExpression>,
     }
 
@@ -147,39 +148,47 @@ mod rearrange {
                 },
             );
 
-            let (right_expression, permute, _) =
+            let (right_expression, permute, repeat, _) =
                 (0..).into_iter().take_while(|_| !input.is_empty()).fold(
                     (
                         Vec::new(),
                         Vec::new(),
+                        Vec::new(),
                         Box::new(Index::Known) as Box<dyn Fn(usize) -> Index>,
                     ),
-                    |(mut right_expression, mut permute, mut index_fn), i| {
+                    |(mut right_expression, mut permute, mut repeat, mut index_fn), i| {
                         if input.peek(token::Paren) {
-                            let (combined, combined_permute) =
+                            let (combined, combined_permute, combined_repeat) =
                                 parse_right_parenthesized(input, i, &mut index_fn, &positions)
                                     .unwrap();
                             permute.extend(combined_permute);
+                            repeat.extend(combined_repeat);
                             right_expression.push(combined);
                         } else if input.peek(syn::Ident) {
-                            let (name, _) = parse_identifier(input).unwrap();
-                            permute.push(positions.get(&name).unwrap().clone());
+                            let (name, shape) = parse_identifier(input).unwrap();
+                            if let Some(index) = positions.get(&name) {
+                                permute.push(index.clone());
+                            } else {
+                                repeat.push((index_fn(i), shape.unwrap()));
+                            }
                             right_expression.push(RightExpression::Individual(index_fn(i)))
                         } else if input.peek(syn::LitInt) {
-                            todo!();
+                            repeat.push((index_fn(i), parse_usize(input).unwrap()));
+                            right_expression.push(RightExpression::Individual(index_fn(i)));
                         } else if input.peek(syn::Token![..]) {
                             input.parse::<syn::Token![..]>().unwrap();
                             right_expression.push(RightExpression::Individual(Index::Range(i)));
                             permute.push(positions.get("..").unwrap().clone());
                             index_fn = Box::new(Index::Unknown);
                         }
-                        (right_expression, permute, index_fn)
+                        (right_expression, permute, repeat, index_fn)
                     },
                 );
 
             Ok(Expression {
                 left_expression,
                 permute,
+                repeat,
                 right_expression,
             })
         }
@@ -235,43 +244,43 @@ mod rearrange {
         start_index: usize,
         index_fn: &mut Box<dyn Fn(usize) -> Index>,
         positions: &HashMap<String, Index>,
-    ) -> syn::Result<(RightExpression, Vec<Index>)> {
+    ) -> syn::Result<(RightExpression, Vec<Index>, Vec<(Index, usize)>)> {
         let content;
         syn::parenthesized!(content in input);
 
         let mut permute = Vec::new();
+        let mut repeat = Vec::new();
 
-        let from = if content.peek(syn::Token![..]) {
-            content.parse::<syn::Token![..]>().unwrap();
-            *index_fn = Box::new(Index::Unknown);
-            permute.push(positions.get("..").unwrap().clone());
-            Index::Range(start_index)
-        } else if content.peek(syn::Ident) {
-            let (name, _) = parse_identifier(&content).unwrap();
-            permute.push(positions.get(&name).unwrap().clone());
-            index_fn(start_index)
-        } else {
-            todo!();
+        let mut parse_content = |content: ParseStream, index: usize| -> Index {
+            if content.peek(syn::Token![..]) {
+                content.parse::<syn::Token![..]>().unwrap();
+                permute.push(positions.get("..").unwrap().clone());
+                *index_fn = Box::new(Index::Unknown);
+                Index::Range(index)
+            } else if content.peek(syn::Ident) {
+                let (name, shape) = parse_identifier(&content).unwrap();
+                if let Some(index) = positions.get(&name) {
+                    permute.push(index.clone());
+                } else {
+                    repeat.push((index_fn(index), shape.unwrap()));
+                }
+                index_fn(index)
+            } else if content.peek(syn::LitInt) {
+                repeat.push((index_fn(index), parse_usize(content).unwrap()));
+                index_fn(index)
+            } else {
+                todo!();
+            }
         };
 
-        let to = (1..)
+        let from = parse_content(&content, start_index);
+
+        let to = ((1 + start_index)..)
             .into_iter()
             .take_while(|_| !content.is_empty())
-            .fold(None, |mut to, i| {
-                if content.peek(syn::Ident) {
-                    let (name, _) = parse_identifier(&content).unwrap();
-                    permute.push(positions.get(&name).unwrap().clone());
-                    to = Some(index_fn(i + start_index));
-                } else if content.peek(syn::Token![..]) {
-                    content.parse::<syn::Token![..]>().unwrap();
-                    permute.push(positions.get("..").unwrap().clone());
-                    to = Some(Index::Range(i + start_index));
-                    *index_fn = Box::new(Index::Unknown);
-                }
-                to
-            });
+            .fold(None, |_, i| Some(parse_content(&content, i)));
 
-        Ok((RightExpression::Combined { from, to }, permute))
+        Ok((RightExpression::Combined { from, to }, permute, repeat))
     }
 
     fn parse_identifier(input: ParseStream) -> syn::Result<(String, Option<usize>)> {
@@ -279,13 +288,17 @@ mod rearrange {
 
         let shape = if input.peek(syn::Token![:]) {
             input.parse::<syn::Token![:]>()?;
-            let shape = input.parse::<syn::LitInt>()?;
-            Some(shape.base10_parse::<usize>()?)
+            Some(parse_usize(input)?)
         } else {
             None
         };
 
         Ok((name, shape))
+    }
+
+    fn parse_usize(input: ParseStream) -> syn::Result<usize> {
+        let len = input.parse::<syn::LitInt>()?;
+        Ok(len.base10_parse::<usize>()?)
     }
 
     impl quote::ToTokens for ParsedExpression {
@@ -297,6 +310,7 @@ mod rearrange {
             let Expression {
                 ref left_expression,
                 ref permute,
+                ref repeat,
                 ref right_expression,
             } = expression;
 
@@ -472,6 +486,13 @@ mod rearrange {
                 _ => todo!(),
             };
 
+            let n_repeats = repeat.len();
+            let repeat_pos_len = repeat.iter().map(|expression| match expression {
+                (Index::Known(index), len) => quote!((#index, #len)),
+                (Index::Unknown(index), len) => quote!((#index + #ignored_len_ident - 1, #len)),
+                _ => todo!(),
+            });
+
             let (before_ignored, ignored, after_ignored, _) = right_expression.iter().fold(
                 (
                     Vec::new(),
@@ -615,6 +636,12 @@ mod rearrange {
                 let #tensor_ident = Backend::reshape(&#tensor_ident, &#decomposition_shape);
 
                 let #tensor_ident = Backend::transpose(&#tensor_ident, &#permute_indices);
+
+                let #shape_ident = Backend::shape(&#tensor_ident);
+
+                let #tensor_ident = Backend::add_axes(
+                    &#tensor_ident, #shape_ident.len() + #n_repeats, &[#(#repeat_pos_len),*]
+                );
 
                 let #shape_ident = Backend::shape(&#tensor_ident);
 
