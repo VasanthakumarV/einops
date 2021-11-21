@@ -17,6 +17,24 @@ impl Backend for Tensor {
         self.permute(&axes.iter().map(|&x| x as i64).collect::<Vec<_>>())
     }
 
+    fn reduce_axes_v2(&self, axes_operation: &mut [(usize, Operation)]) -> Self {
+        let mut output = self.shallow_clone();
+
+        axes_operation.sort_by_key(|(axis, _)| *axis);
+
+        for (axis, operation) in axes_operation.iter().rev() {
+            output = match operation {
+                Operation::Min => output.min_dim(*axis as i64, false).0,
+                Operation::Max => output.max_dim(*axis as i64, false).0,
+                Operation::Sum => output.sum_dim_intlist(&[*axis as i64], false, output.kind()),
+                Operation::Mean => output.mean_dim(&[*axis as i64], false, output.kind()),
+                Operation::Prod => output.prod_dim_int(*axis as i64, false, output.kind()),
+            };
+        }
+
+        output
+    }
+
     fn reduce_axes(&self, operation: Operation, axes: &[usize]) -> Self {
         let mut output = self.shallow_clone();
 

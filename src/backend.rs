@@ -8,6 +8,7 @@ pub trait Backend {
     fn reshape(&self, shape: &[usize]) -> Self;
     fn transpose(&self, axes: &[usize]) -> Self;
     fn reduce_axes(&self, operation: Operation, axes: &[usize]) -> Self;
+    fn reduce_axes_v2(&self, axes_operation: &mut [(usize, Operation)]) -> Self;
     fn add_axes(&self, naxes: usize, pos2len: &[(usize, usize)]) -> Self;
 }
 

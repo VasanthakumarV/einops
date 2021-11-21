@@ -6,6 +6,14 @@ pub fn rearrange(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 mod rearrange {
+    mod kw {
+        syn::custom_keyword!(min);
+        syn::custom_keyword!(max);
+        syn::custom_keyword!(sum);
+        syn::custom_keyword!(mean);
+        syn::custom_keyword!(prod);
+    }
+
     use std::collections::HashMap;
 
     use quote::{format_ident, quote};
@@ -38,21 +46,24 @@ mod rearrange {
     #[derive(Debug)]
     struct Expression {
         left_expression: Vec<LeftExpression>,
+        reduce: Vec<(Index, Operation)>,
         permute: Vec<Index>,
         repeat: Vec<(Index, usize)>,
         right_expression: Vec<RightExpression>,
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     enum LeftExpression {
         Derived {
             name: String,
             index: Index,
+            operation: Option<Operation>,
             shape_calc: usize,
         },
         Named {
             name: String,
             index: Index,
+            operation: Option<Operation>,
             shape: Option<usize>,
         },
     }
@@ -68,6 +79,15 @@ mod rearrange {
         Known(usize),
         Unknown(usize),
         Range(usize),
+    }
+
+    #[derive(Debug, Clone)]
+    enum Operation {
+        Min,
+        Max,
+        Sum,
+        Mean,
+        Prod,
     }
 
     impl syn::parse::Parse for Expression {
@@ -91,12 +111,21 @@ mod rearrange {
                             let content_expression =
                                 parse_left_parenthesized(input, index_fn(i)).unwrap();
                             left_expression.extend(content_expression);
+                        } else if peek_reduce_kw(input) {
+                            let (name, shape, operation) = parse_reduce_fn(input).unwrap();
+                            left_expression.push(LeftExpression::Named {
+                                name,
+                                index: index_fn(i),
+                                shape,
+                                operation: Some(operation),
+                            });
                         } else if input.peek(syn::Ident) {
                             let (name, shape) = parse_identifier(input).unwrap();
                             left_expression.push(LeftExpression::Named {
                                 name,
                                 shape,
                                 index: index_fn(i),
+                                operation: None,
                             });
                         } else if input.peek(syn::LitInt) {
                             todo!("parse_int");
@@ -106,6 +135,7 @@ mod rearrange {
                                 name: "..".to_string(),
                                 index: Index::Range(i),
                                 shape: None,
+                                operation: None,
                             });
                             index_fn = Box::new(Index::Unknown);
                         }
@@ -113,41 +143,70 @@ mod rearrange {
                     },
                 );
 
-            let positions = left_expression.iter().enumerate().fold(
-                HashMap::new(),
-                |mut map, (i, expression)| {
+            let reduce = left_expression
+                .iter()
+                .cloned()
+                .enumerate()
+                .filter_map(|(i, expression)| match expression {
+                    LeftExpression::Named {
+                        index: Index::Known(_),
+                        operation: Some(operation),
+                        ..
+                    } => Some((Index::Known(i), operation)),
+                    LeftExpression::Named {
+                        index: Index::Unknown(_),
+                        operation: Some(operation),
+                        ..
+                    } => Some((Index::Unknown(i), operation)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+
+            let positions = left_expression
+                .iter()
+                .filter(|expression| {
+                    !matches!(
+                        expression,
+                        LeftExpression::Named {
+                            operation: Some(_),
+                            ..
+                        }
+                    )
+                })
+                .enumerate()
+                .fold(HashMap::new(), |mut map, (i, expression)| {
                     match expression {
                         LeftExpression::Named {
                             name,
                             index: Index::Known(_),
-                            shape: _,
+                            ..
                         }
                         | LeftExpression::Derived {
                             name,
                             index: Index::Known(_),
-                            shape_calc: _,
+                            ..
                         } => map.insert(name.clone(), Index::Known(i)),
                         LeftExpression::Named {
                             name,
                             index: Index::Unknown(_),
-                            shape: _,
+                            ..
                         }
                         | LeftExpression::Derived {
                             name,
                             index: Index::Unknown(_),
-                            shape_calc: _,
+                            ..
                         } => map.insert(name.clone(), Index::Unknown(i)),
                         LeftExpression::Named {
                             name,
                             index: Index::Range(_),
-                            shape: _,
+                            ..
                         } => map.insert(name.clone(), Index::Range(i)),
                         _ => todo!(),
                     };
                     map
-                },
-            );
+                });
 
+            let mut parenthesized_len: usize = 0;
             let (right_expression, permute, repeat, _) =
                 (0..).into_iter().take_while(|_| !input.is_empty()).fold(
                     (
@@ -156,11 +215,13 @@ mod rearrange {
                         Vec::new(),
                         Box::new(Index::Known) as Box<dyn Fn(usize) -> Index>,
                     ),
-                    |(mut right_expression, mut permute, mut repeat, mut index_fn), i| {
+                    |(mut right_expression, mut permute, mut repeat, mut index_fn), mut i| {
+                        i += parenthesized_len.saturating_sub(1);
                         if input.peek(token::Paren) {
-                            let (combined, combined_permute, combined_repeat) =
+                            let (combined, combined_permute, combined_repeat, combined_len) =
                                 parse_right_parenthesized(input, i, &mut index_fn, &positions)
                                     .unwrap();
+                            parenthesized_len += combined_len;
                             permute.extend(combined_permute);
                             repeat.extend(combined_repeat);
                             right_expression.push(combined);
@@ -187,6 +248,7 @@ mod rearrange {
 
             Ok(Expression {
                 left_expression,
+                reduce,
                 permute,
                 repeat,
                 right_expression,
@@ -207,19 +269,26 @@ mod rearrange {
             (0..).into_iter().take_while(|_| !content.is_empty()).fold(
                 (None, None, 1),
                 |(mut derived_name, mut derived_index, mut running_mul), i| {
-                    if content.peek(syn::Ident) {
+                    let (name, shape, operation) = if peek_reduce_kw(&content) {
+                        let (name, shape, operation) = parse_reduce_fn(&content).unwrap();
+                        (name, shape, Some(operation))
+                    } else if content.peek(syn::Ident) {
                         let (name, shape) = parse_identifier(&content).unwrap();
-                        if let Some(size) = shape {
-                            running_mul *= size;
-                            content_expression.push(LeftExpression::Named {
-                                name,
-                                index: index.clone(),
-                                shape: Some(size),
-                            });
-                        } else {
-                            derived_name = Some(name.clone());
-                            derived_index = Some(i);
-                        }
+                        (name, shape, None)
+                    } else {
+                        todo!();
+                    };
+                    if let Some(size) = shape {
+                        running_mul *= size;
+                        content_expression.push(LeftExpression::Named {
+                            name,
+                            index: index.clone(),
+                            operation,
+                            shape: Some(size),
+                        });
+                    } else {
+                        derived_name = Some(name.clone());
+                        derived_index = Some(i);
                     }
                     (derived_name, derived_index, running_mul)
                 },
@@ -231,6 +300,7 @@ mod rearrange {
                 LeftExpression::Derived {
                     name: derived_name.unwrap(),
                     index,
+                    operation: None,
                     shape_calc: running_mul,
                 },
             );
@@ -244,7 +314,7 @@ mod rearrange {
         start_index: usize,
         index_fn: &mut Box<dyn Fn(usize) -> Index>,
         positions: &HashMap<String, Index>,
-    ) -> syn::Result<(RightExpression, Vec<Index>, Vec<(Index, usize)>)> {
+    ) -> syn::Result<(RightExpression, Vec<Index>, Vec<(Index, usize)>, usize)> {
         let content;
         syn::parenthesized!(content in input);
 
@@ -275,12 +345,54 @@ mod rearrange {
 
         let from = parse_content(&content, start_index);
 
-        let to = ((1 + start_index)..)
+        let to = ((start_index + 1)..)
             .into_iter()
             .take_while(|_| !content.is_empty())
             .fold(None, |_, i| Some(parse_content(&content, i)));
 
-        Ok((RightExpression::Combined { from, to }, permute, repeat))
+        let len = if let Some(Index::Known(end_index) | Index::Unknown(end_index)) = to {
+            end_index - (start_index - 1)
+        } else {
+            0
+        };
+
+        Ok((RightExpression::Combined { from, to }, permute, repeat, len))
+    }
+
+    fn peek_reduce_kw(input: ParseStream) -> bool {
+        input.peek(kw::min)
+            | input.peek(kw::max)
+            | input.peek(kw::sum)
+            | input.peek(kw::mean)
+            | input.peek(kw::prod)
+    }
+
+    fn parse_reduce_fn(input: ParseStream) -> syn::Result<(String, Option<usize>, Operation)> {
+        let operation = if input.peek(kw::min) {
+            input.parse::<kw::min>()?;
+            Operation::Min
+        } else if input.peek(kw::max) {
+            input.parse::<kw::max>()?;
+            Operation::Max
+        } else if input.peek(kw::sum) {
+            input.parse::<kw::sum>()?;
+            Operation::Sum
+        } else if input.peek(kw::mean) {
+            input.parse::<kw::mean>()?;
+            Operation::Mean
+        } else if input.peek(kw::prod) {
+            input.parse::<kw::prod>()?;
+            Operation::Prod
+        } else {
+            todo!();
+        };
+
+        let content;
+        syn::parenthesized!(content in input);
+
+        let (name, shape) = parse_identifier(&content)?;
+
+        Ok((name, shape, operation))
     }
 
     fn parse_identifier(input: ParseStream) -> syn::Result<(String, Option<usize>)> {
@@ -309,6 +421,7 @@ mod rearrange {
             } = self;
             let Expression {
                 ref left_expression,
+                ref reduce,
                 ref permute,
                 ref repeat,
                 ref right_expression,
@@ -410,6 +523,28 @@ mod rearrange {
                 ),
                 _ => todo!(),
             };
+
+            let (reduce_indices, reduce_operations) = reduce.iter().fold(
+                (Vec::new(), Vec::new()),
+                |(mut reduce_indices, mut reduce_operations), expression| {
+                    let (index, operation) = expression;
+                    let index = match index {
+                        Index::Known(i) => quote!(#i),
+                        Index::Unknown(i) => quote!(#i + #ignored_len_ident - 1),
+                        _ => todo!(),
+                    };
+                    let operation = match operation {
+                        Operation::Min => quote!(einops::Operation::Min),
+                        Operation::Max => quote!(einops::Operation::Max),
+                        Operation::Sum => quote!(einops::Operation::Sum),
+                        Operation::Mean => quote!(einops::Operation::Mean),
+                        Operation::Prod => quote!(einops::Operation::Prod),
+                    };
+                    reduce_indices.push(index);
+                    reduce_operations.push(operation);
+                    (reduce_indices, reduce_operations)
+                },
+            );
 
             let (before_ignored, ignored_permute, after_ignored, _) = permute.iter().fold(
                 (
@@ -634,6 +769,10 @@ mod rearrange {
                 #ignored_len
 
                 let #tensor_ident = Backend::reshape(&#tensor_ident, &#decomposition_shape);
+
+                let #tensor_ident = Backend::reduce_axes_v2(
+                    &#tensor_ident, &mut [#((#reduce_indices, #reduce_operations)),*]
+                );
 
                 let #tensor_ident = Backend::transpose(&#tensor_ident, &#permute_indices);
 
