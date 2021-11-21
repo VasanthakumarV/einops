@@ -45,15 +45,15 @@ mod rearrange {
 
     #[derive(Debug)]
     struct Expression {
-        left_expression: Vec<LeftExpression>,
+        decomposition: Vec<Decomposition>,
         reduce: Vec<(Index, Operation)>,
         permute: Vec<Index>,
         repeat: Vec<(Index, usize)>,
-        right_expression: Vec<RightExpression>,
+        composition: Vec<Composition>,
     }
 
     #[derive(Debug, Clone)]
-    enum LeftExpression {
+    enum Decomposition {
         Derived {
             name: String,
             index: Index,
@@ -69,7 +69,7 @@ mod rearrange {
     }
 
     #[derive(Debug)]
-    enum RightExpression {
+    enum Composition {
         Individual(Index),
         Combined { from: Index, to: Option<Index> },
     }
@@ -114,7 +114,7 @@ mod rearrange {
 
     impl syn::parse::Parse for Expression {
         fn parse(input: ParseStream) -> syn::Result<Self> {
-            let (left_expression, _) = (0..)
+            let (decomposition, _) = (0..)
                 .into_iter()
                 .take_while(|_| {
                     if input.peek(syn::Token![->]) {
@@ -128,14 +128,14 @@ mod rearrange {
                         Vec::new(),
                         Box::new(Index::Known) as Box<dyn Fn(usize) -> Index>,
                     ),
-                    |(mut left_expression, mut index_fn), i| {
+                    |(mut decomposition, mut index_fn), i| {
                         if input.peek(syn::token::Paren) {
                             let content_expression =
                                 parse_left_parenthesized(input, index_fn(i)).unwrap();
-                            left_expression.extend(content_expression);
+                            decomposition.extend(content_expression);
                         } else if peek_reduce_kw(input) {
                             let (name, shape, operation) = parse_reduce_fn(input).unwrap();
-                            left_expression.push(LeftExpression::Named {
+                            decomposition.push(Decomposition::Named {
                                 name,
                                 index: index_fn(i),
                                 shape,
@@ -143,7 +143,7 @@ mod rearrange {
                             });
                         } else if input.peek(syn::Ident) {
                             let (name, shape) = parse_identifier(input).unwrap();
-                            left_expression.push(LeftExpression::Named {
+                            decomposition.push(Decomposition::Named {
                                 name,
                                 shape,
                                 index: index_fn(i),
@@ -153,7 +153,7 @@ mod rearrange {
                             todo!("parse_int");
                         } else if input.peek(syn::Token![..]) {
                             input.parse::<syn::Token![..]>().unwrap();
-                            left_expression.push(LeftExpression::Named {
+                            decomposition.push(Decomposition::Named {
                                 name: "..".to_string(),
                                 index: Index::Range(i),
                                 shape: None,
@@ -161,21 +161,21 @@ mod rearrange {
                             });
                             index_fn = Box::new(Index::Unknown);
                         }
-                        (left_expression, index_fn)
+                        (decomposition, index_fn)
                     },
                 );
 
-            let reduce = left_expression
+            let reduce = decomposition
                 .iter()
                 .cloned()
                 .enumerate()
                 .filter_map(|(i, expression)| match expression {
-                    LeftExpression::Named {
+                    Decomposition::Named {
                         index: Index::Known(_),
                         operation: Some(operation),
                         ..
                     } => Some((Index::Known(i), operation)),
-                    LeftExpression::Named {
+                    Decomposition::Named {
                         index: Index::Unknown(_),
                         operation: Some(operation),
                         ..
@@ -184,12 +184,12 @@ mod rearrange {
                 })
                 .collect::<Vec<_>>();
 
-            let positions = left_expression
+            let positions = decomposition
                 .iter()
                 .filter(|expression| {
                     !matches!(
                         expression,
-                        LeftExpression::Named {
+                        Decomposition::Named {
                             operation: Some(_),
                             ..
                         }
@@ -198,27 +198,27 @@ mod rearrange {
                 .enumerate()
                 .fold(HashMap::new(), |mut map, (i, expression)| {
                     match expression {
-                        LeftExpression::Named {
+                        Decomposition::Named {
                             name,
                             index: Index::Known(_),
                             ..
                         }
-                        | LeftExpression::Derived {
+                        | Decomposition::Derived {
                             name,
                             index: Index::Known(_),
                             ..
                         } => map.insert(name.clone(), Index::Known(i)),
-                        LeftExpression::Named {
+                        Decomposition::Named {
                             name,
                             index: Index::Unknown(_),
                             ..
                         }
-                        | LeftExpression::Derived {
+                        | Decomposition::Derived {
                             name,
                             index: Index::Unknown(_),
                             ..
                         } => map.insert(name.clone(), Index::Unknown(i)),
-                        LeftExpression::Named {
+                        Decomposition::Named {
                             name,
                             index: Index::Range(_),
                             ..
@@ -229,7 +229,7 @@ mod rearrange {
                 });
 
             let mut parenthesized_len: usize = 0;
-            let (right_expression, permute, repeat, _) =
+            let (composition, permute, repeat, _) =
                 (0..).into_iter().take_while(|_| !input.is_empty()).fold(
                     (
                         Vec::new(),
@@ -237,7 +237,7 @@ mod rearrange {
                         Vec::new(),
                         Box::new(Index::Known) as Box<dyn Fn(usize) -> Index>,
                     ),
-                    |(mut right_expression, mut permute, mut repeat, mut index_fn), mut i| {
+                    |(mut composition, mut permute, mut repeat, mut index_fn), mut i| {
                         i += parenthesized_len.saturating_sub(1);
                         if input.peek(token::Paren) {
                             let (combined, combined_permute, combined_repeat, combined_len) =
@@ -246,7 +246,7 @@ mod rearrange {
                             parenthesized_len += combined_len;
                             permute.extend(combined_permute);
                             repeat.extend(combined_repeat);
-                            right_expression.push(combined);
+                            composition.push(combined);
                         } else if input.peek(syn::Ident) {
                             let (name, shape) = parse_identifier(input).unwrap();
                             if let Some(index) = positions.get(&name) {
@@ -254,26 +254,26 @@ mod rearrange {
                             } else {
                                 repeat.push((index_fn(i), shape.unwrap()));
                             }
-                            right_expression.push(RightExpression::Individual(index_fn(i)))
+                            composition.push(Composition::Individual(index_fn(i)))
                         } else if input.peek(syn::LitInt) {
                             repeat.push((index_fn(i), parse_usize(input).unwrap()));
-                            right_expression.push(RightExpression::Individual(index_fn(i)));
+                            composition.push(Composition::Individual(index_fn(i)));
                         } else if input.peek(syn::Token![..]) {
                             input.parse::<syn::Token![..]>().unwrap();
-                            right_expression.push(RightExpression::Individual(Index::Range(i)));
+                            composition.push(Composition::Individual(Index::Range(i)));
                             permute.push(positions.get("..").unwrap().clone());
                             index_fn = Box::new(Index::Unknown);
                         }
-                        (right_expression, permute, repeat, index_fn)
+                        (composition, permute, repeat, index_fn)
                     },
                 );
 
             Ok(Expression {
-                left_expression,
+                decomposition,
                 reduce,
                 permute,
                 repeat,
-                right_expression,
+                composition,
             })
         }
     }
@@ -281,7 +281,7 @@ mod rearrange {
     fn parse_left_parenthesized(
         input: ParseStream,
         index: Index,
-    ) -> syn::Result<Vec<LeftExpression>> {
+    ) -> syn::Result<Vec<Decomposition>> {
         let content;
         syn::parenthesized!(content in input);
 
@@ -302,7 +302,7 @@ mod rearrange {
                     };
                     if let Some(size) = shape {
                         running_mul *= size;
-                        content_expression.push(LeftExpression::Named {
+                        content_expression.push(Decomposition::Named {
                             name,
                             index: index.clone(),
                             operation,
@@ -319,7 +319,7 @@ mod rearrange {
         if let Some(derived_index) = derived_index {
             content_expression.insert(
                 derived_index,
-                LeftExpression::Derived {
+                Decomposition::Derived {
                     name: derived_name.unwrap(),
                     index,
                     operation: None,
@@ -336,7 +336,7 @@ mod rearrange {
         start_index: usize,
         index_fn: &mut Box<dyn Fn(usize) -> Index>,
         positions: &HashMap<String, Index>,
-    ) -> syn::Result<(RightExpression, Vec<Index>, Vec<(Index, usize)>, usize)> {
+    ) -> syn::Result<(Composition, Vec<Index>, Vec<(Index, usize)>, usize)> {
         let content;
         syn::parenthesized!(content in input);
 
@@ -378,7 +378,7 @@ mod rearrange {
             0
         };
 
-        Ok((RightExpression::Combined { from, to }, permute, repeat, len))
+        Ok((Composition::Combined { from, to }, permute, repeat, len))
     }
 
     fn peek_reduce_kw(input: ParseStream) -> bool {
@@ -442,11 +442,11 @@ mod rearrange {
                 ref expression,
             } = self;
             let Expression {
-                ref left_expression,
+                decomposition: ref left_expression,
                 ref reduce,
                 ref permute,
                 ref repeat,
-                ref right_expression,
+                composition: ref right_expression,
             } = expression;
 
             let shape_ident = format_ident!("{}_{}", tensor_ident, "shape");
@@ -457,15 +457,15 @@ mod rearrange {
             );
 
             let ignored_len_tokens = match left_expression.last().unwrap() {
-                LeftExpression::Named {
+                Decomposition::Named {
                     index: Index::Unknown(i),
                     ..
                 }
-                | LeftExpression::Derived {
+                | Decomposition::Derived {
                     index: Index::Unknown(i),
                     ..
                 }
-                | LeftExpression::Named {
+                | Decomposition::Named {
                     index: Index::Range(i),
                     ..
                 } => {
@@ -476,7 +476,7 @@ mod rearrange {
 
             let decomposition_tokens = if left_expression
                 .iter()
-                .any(|expression| matches!(expression, LeftExpression::Derived { .. }))
+                .any(|expression| matches!(expression, Decomposition::Derived { .. }))
             {
                 to_tokens_decomposition(
                     left_expression,
@@ -508,7 +508,7 @@ mod rearrange {
 
             let composition_tokens = if right_expression
                 .iter()
-                .any(|expression| matches!(expression, RightExpression::Combined { .. }))
+                .any(|expression| matches!(expression, Composition::Combined { .. }))
             {
                 to_tokens_composition(
                     right_expression,
@@ -549,7 +549,7 @@ mod rearrange {
     }
 
     fn to_tokens_composition(
-        right_expression: &Vec<RightExpression>,
+        right_expression: &Vec<Composition>,
         tensor_ident: &syn::Ident,
         ignored_len_ident: &syn::Ident,
         shape_ident: &syn::Ident,
@@ -571,16 +571,16 @@ mod rearrange {
                         }
                     };
                     match expression {
-                        RightExpression::Individual(Index::Known(index))
-                        | RightExpression::Combined {
+                        Composition::Individual(Index::Known(index))
+                        | Composition::Combined {
                             from: Index::Known(index),
                             to: None,
                         } => {
                             let shape = quote!(#shape_ident[#index]);
                             insert_shape(shape);
                         }
-                        RightExpression::Individual(Index::Unknown(index))
-                        | RightExpression::Combined {
+                        Composition::Individual(Index::Unknown(index))
+                        | Composition::Combined {
                             from: Index::Unknown(index),
                             to: None,
                         } => {
@@ -589,14 +589,14 @@ mod rearrange {
                             );
                             insert_shape(shape);
                         }
-                        RightExpression::Individual(Index::Range(index)) => {
+                        Composition::Individual(Index::Range(index)) => {
                             ignored = quote!(
                                 (#index..(#index + #ignored_len_ident))
                                     .into_iter().map(|i| #shape_ident[i])
                             );
                             is_after_ignored = true;
                         }
-                        RightExpression::Combined {
+                        Composition::Combined {
                             from: Index::Range(index),
                             to: None,
                         } => {
@@ -606,7 +606,7 @@ mod rearrange {
                             );
                             insert_shape(shape);
                         }
-                        RightExpression::Combined {
+                        Composition::Combined {
                             from: Index::Known(from_index),
                             to: Some(Index::Known(to_index)),
                         } => {
@@ -616,11 +616,11 @@ mod rearrange {
                             );
                             insert_shape(shape);
                         }
-                        RightExpression::Combined {
+                        Composition::Combined {
                             from: Index::Known(from_index),
                             to: Some(Index::Unknown(to_index)),
                         }
-                        | RightExpression::Combined {
+                        | Composition::Combined {
                             from: Index::Known(from_index),
                             to: Some(Index::Range(to_index)),
                         } => {
@@ -630,7 +630,7 @@ mod rearrange {
                             );
                             insert_shape(shape);
                         }
-                        RightExpression::Combined {
+                        Composition::Combined {
                             from: Index::Range(from_index),
                             to: Some(Index::Unknown(to_index)),
                         } => {
@@ -640,7 +640,7 @@ mod rearrange {
                             );
                             insert_shape(shape);
                         }
-                        RightExpression::Combined {
+                        Composition::Combined {
                             from: Index::Unknown(from_index),
                             to: Some(Index::Unknown(to_index)),
                         } => {
@@ -827,7 +827,7 @@ mod rearrange {
     }
 
     fn to_tokens_decomposition(
-        left_expression: &Vec<LeftExpression>,
+        left_expression: &Vec<Decomposition>,
         tensor_ident: &syn::Ident,
         ignored_len_ident: &syn::Ident,
         shape_ident: &syn::Ident,
@@ -836,21 +836,21 @@ mod rearrange {
             (Vec::new(), proc_macro2::TokenStream::new(), Vec::new()),
             |(mut known_indices, mut ignored_indices, mut unknown_indices), expression| {
                 match expression {
-                    LeftExpression::Named {
+                    Decomposition::Named {
                         index: Index::Known(_),
                         shape: Some(size),
                         ..
                     } => known_indices.push(quote!(#size)),
-                    LeftExpression::Named {
+                    Decomposition::Named {
                         index: Index::Known(i),
                         ..
                     } => known_indices.push(quote!(#shape_ident[#i])),
-                    LeftExpression::Derived {
+                    Decomposition::Derived {
                         index: Index::Known(i),
                         shape_calc,
                         ..
                     } => known_indices.push(quote!(#shape_ident[#i] / #shape_calc)),
-                    LeftExpression::Named {
+                    Decomposition::Named {
                         index: Index::Range(i),
                         ..
                     } => {
@@ -858,11 +858,11 @@ mod rearrange {
                             (#i..(#i + #ignored_len_ident)).into_iter().map(|i| #shape_ident[i])
                         );
                     }
-                    LeftExpression::Named {
+                    Decomposition::Named {
                         index: Index::Unknown(i),
                         ..
                     } => unknown_indices.push(quote!(#shape_ident[#i + #ignored_len_ident - 1])),
-                    LeftExpression::Derived {
+                    Decomposition::Derived {
                         index: Index::Unknown(i),
                         shape_calc,
                         ..
