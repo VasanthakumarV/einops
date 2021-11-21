@@ -74,11 +74,33 @@ mod rearrange {
         Combined { from: Index, to: Option<Index> },
     }
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Eq, PartialOrd)]
     enum Index {
         Known(usize),
         Unknown(usize),
         Range(usize),
+    }
+
+    impl Ord for Index {
+        fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+            match (self, other) {
+                (
+                    Index::Known(i) | Index::Unknown(i) | Index::Range(i),
+                    Index::Known(j) | Index::Unknown(j) | Index::Range(j),
+                ) => i.cmp(&j),
+            }
+        }
+    }
+
+    impl PartialEq for Index {
+        fn eq(&self, other: &Self) -> bool {
+            match (self, other) {
+                (
+                    Index::Known(i) | Index::Unknown(i) | Index::Range(i),
+                    Index::Known(j) | Index::Unknown(j) | Index::Range(j),
+                ) => i == j,
+            }
+        }
     }
 
     #[derive(Debug, Clone)]
@@ -430,7 +452,11 @@ mod rearrange {
             let shape_ident = format_ident!("{}_{}", tensor_ident, "shape");
             let ignored_len_ident = format_ident!("{}", "ignored_len");
 
-            let ignored_len = match left_expression.last().unwrap() {
+            let shape_tokens = quote!(
+                let #shape_ident = Backend::shape(&#tensor_ident);
+            );
+
+            let ignored_len_tokens = match left_expression.last().unwrap() {
                 LeftExpression::Named {
                     index: Index::Unknown(i),
                     ..
@@ -448,187 +474,87 @@ mod rearrange {
                 _ => proc_macro2::TokenStream::new(),
             };
 
-            let (known_indices, ignored_indices, unknown_indices) = left_expression.iter().fold(
-                (Vec::new(), proc_macro2::TokenStream::new(), Vec::new()),
-                |(mut known_indices, mut ignored_indices, mut unknown_indices), expression| {
-                    match expression {
-                        LeftExpression::Named {
-                            index: Index::Known(_),
-                            shape: Some(size),
-                            ..
-                        } => known_indices.push(quote!(#size)),
-                        LeftExpression::Named {
-                            index: Index::Known(i),
-                            ..
-                        } => known_indices.push(quote!(#shape_ident[#i])),
-                        LeftExpression::Derived {
-                            index: Index::Known(i),
-                            shape_calc,
-                            ..
-                        } => known_indices.push(quote!(#shape_ident[#i] / #shape_calc)),
-                        LeftExpression::Named {
-                            index: Index::Range(i),
-                            ..
-                        } => {
-                            ignored_indices = quote!(
-                                (#i..(#i + #ignored_len_ident)).into_iter().map(|i| #shape_ident[i])
-                            );
-                        }
-                        LeftExpression::Named {
-                            index: Index::Unknown(i),
-                            ..
-                        } => {
-                            unknown_indices.push(quote!(#shape_ident[#i + #ignored_len_ident - 1]))
-                        }
-                        LeftExpression::Derived {
-                            index: Index::Unknown(i),
-                            shape_calc,
-                            ..
-                        } => unknown_indices
-                            .push(quote!(#shape_ident[#i + #ignored_len_ident - 1] / #shape_calc)),
-                        _ => todo!(),
-                    }
-                    (known_indices, ignored_indices, unknown_indices)
-                },
-            );
-
-            let decomposition_shape = match (
-                known_indices.is_empty(),
-                ignored_indices.is_empty(),
-                unknown_indices.is_empty(),
-            ) {
-                (false, true, true) => {
-                    quote!([#(#known_indices),*])
-                }
-                (false, false, true) => quote!(
-                    [#(#known_indices),*]
-                        .into_iter()
-                        .chain(#ignored_indices)
-                        .into_iter()
-                        .collect::<Vec<_>>()
-                ),
-                (false, false, false) => quote!(
-                    [#(#known_indices),*]
-                        .into_iter()
-                        .chain(#ignored_indices)
-                        .chain([#(#unknown_indices),*].into_iter())
-                        .into_iter()
-                        .collect::<Vec<_>>()
-                ),
-                (true, false, false) => quote!(
-                    #ignored_indices
-                        .chain([#(#unknown_indices),*].into_iter())
-                        .into_iter()
-                        .collect::<Vec<_>>()
-                ),
-                _ => todo!(),
+            let decomposition_tokens = if left_expression
+                .iter()
+                .any(|expression| matches!(expression, LeftExpression::Derived { .. }))
+            {
+                to_tokens_decomposition(
+                    left_expression,
+                    &tensor_ident,
+                    &ignored_len_ident,
+                    &shape_ident,
+                )
+            } else {
+                proc_macro2::TokenStream::new()
             };
 
-            let (reduce_indices, reduce_operations) = reduce.iter().fold(
-                (Vec::new(), Vec::new()),
-                |(mut reduce_indices, mut reduce_operations), expression| {
-                    let (index, operation) = expression;
-                    let index = match index {
-                        Index::Known(i) => quote!(#i),
-                        Index::Unknown(i) => quote!(#i + #ignored_len_ident - 1),
-                        _ => todo!(),
-                    };
-                    let operation = match operation {
-                        Operation::Min => quote!(einops::Operation::Min),
-                        Operation::Max => quote!(einops::Operation::Max),
-                        Operation::Sum => quote!(einops::Operation::Sum),
-                        Operation::Mean => quote!(einops::Operation::Mean),
-                        Operation::Prod => quote!(einops::Operation::Prod),
-                    };
-                    reduce_indices.push(index);
-                    reduce_operations.push(operation);
-                    (reduce_indices, reduce_operations)
-                },
-            );
-
-            let (before_ignored, ignored_permute, after_ignored, _) = permute.iter().fold(
-                (
-                    Vec::new(),
-                    proc_macro2::TokenStream::new(),
-                    Vec::new(),
-                    false,
-                ),
-                |(
-                    mut before_ignored,
-                    mut ignored_permute,
-                    mut after_ignored,
-                    mut is_after_ignored,
-                ),
-                 p| {
-                    let mut insert_index = |index| {
-                        if is_after_ignored {
-                            after_ignored.push(index);
-                        } else {
-                            before_ignored.push(index);
-                        }
-                    };
-                    match p {
-                        Index::Known(index) => {
-                            insert_index(quote!(#index));
-                        }
-                        Index::Range(index) => {
-                            is_after_ignored = true;
-                            ignored_permute = quote!(
-                                (#index..(#index + #ignored_len_ident)).into_iter()
-                            )
-                        }
-                        Index::Unknown(index) => {
-                            insert_index(quote!(#index + #ignored_len_ident - 1));
-                        }
-                    };
-                    (
-                        before_ignored,
-                        ignored_permute,
-                        after_ignored,
-                        is_after_ignored,
-                    )
-                },
-            );
-
-            let permute_indices = match (
-                before_ignored.is_empty(),
-                ignored_permute.is_empty(),
-                after_ignored.is_empty(),
-            ) {
-                (false, true, true) => quote!([#(#before_ignored),*]),
-                (false, false, true) => quote!(
-                    [#(#before_ignored),*]
-                        .into_iter()
-                        .chain(#ignored_permute)
-                        .into_iter()
-                        .collect::<Vec<_>>()
-                ),
-                (false, false, false) => quote!(
-                    [#(#before_ignored),*]
-                        .into_iter()
-                        .chain(#ignored_permute)
-                        .chain([#(#after_ignored),*].into_iter())
-                        .into_iter()
-                        .collect::<Vec<_>>()
-
-                ),
-                (true, false, false) => quote!(
-                    #ignored_permute
-                        .chain([#(#after_ignored),*].into_iter())
-                        .into_iter()
-                        .collect::<Vec<_>>()
-                ),
-                _ => todo!(),
+            let reduce_tokens = if !reduce.is_empty() {
+                to_tokens_reduce(reduce, &tensor_ident, &ignored_len_ident)
+            } else {
+                proc_macro2::TokenStream::new()
             };
 
-            let n_repeats = repeat.len();
-            let repeat_pos_len = repeat.iter().map(|expression| match expression {
-                (Index::Known(index), len) => quote!((#index, #len)),
-                (Index::Unknown(index), len) => quote!((#index + #ignored_len_ident - 1, #len)),
-                _ => todo!(),
-            });
+            let permute_tokens = if permute.windows(2).any(|w| w[0] > w[1]) {
+                to_tokens_permute(permute, &tensor_ident, &ignored_len_ident)
+            } else {
+                proc_macro2::TokenStream::new()
+            };
 
-            let (before_ignored, ignored, after_ignored, _) = right_expression.iter().fold(
+            let repeat_tokens = if !repeat.is_empty() {
+                to_tokens_repeat(repeat, &tensor_ident, &ignored_len_ident, &shape_ident)
+            } else {
+                proc_macro2::TokenStream::new()
+            };
+
+            let composition_tokens = if right_expression
+                .iter()
+                .any(|expression| matches!(expression, RightExpression::Combined { .. }))
+            {
+                to_tokens_composition(
+                    right_expression,
+                    &tensor_ident,
+                    &ignored_len_ident,
+                    &shape_ident,
+                )
+            } else {
+                proc_macro2::TokenStream::new()
+            };
+
+            let code = quote! {{
+                use einops::Backend;
+
+                #shape_tokens
+
+                #ignored_len_tokens
+
+                #decomposition_tokens
+
+                #reduce_tokens
+
+                #permute_tokens
+
+                #shape_tokens
+
+                #repeat_tokens
+
+                #shape_tokens
+
+                #composition_tokens
+
+                #tensor_ident
+            }};
+
+            code.to_tokens(tokens);
+        }
+    }
+
+    fn to_tokens_composition(
+        right_expression: &Vec<RightExpression>,
+        tensor_ident: &syn::Ident,
+        ignored_len_ident: &syn::Ident,
+        shape_ident: &syn::Ident,
+    ) -> proc_macro2::TokenStream {
+        let (before_ignored, ignored, after_ignored, _) = right_expression.iter().fold(
                 (
                     Vec::new(),
                     proc_macro2::TokenStream::new(),
@@ -730,106 +656,258 @@ mod rearrange {
                 },
             );
 
-            let composition_shape = match (
-                before_ignored.is_empty(),
-                ignored.is_empty(),
-                after_ignored.is_empty(),
-            ) {
-                (false, true, true) => quote!([#(#before_ignored),*]),
-                (false, false, true) => quote!(
-                    [#(#before_ignored),*]
-                        .into_iter()
-                        .chain(#ignored)
-                        .into_iter()
-                        .collect::<Vec<_>>()
-                ),
-                (false, false, false) => quote!(
-                    [#(#before_ignored),*]
-                        .into_iter()
-                        .chain(#ignored)
-                        .chain([#(#after_ignored),*].into_iter())
-                        .into_iter()
-                        .collect::<Vec<_>>()
+        let composition_shape = match (
+            before_ignored.is_empty(),
+            ignored.is_empty(),
+            after_ignored.is_empty(),
+        ) {
+            (false, true, true) => quote!([#(#before_ignored),*]),
+            (false, false, true) => quote!(
+                [#(#before_ignored),*]
+                    .into_iter()
+                    .chain(#ignored)
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            ),
+            (false, false, false) => quote!(
+                [#(#before_ignored),*]
+                    .into_iter()
+                    .chain(#ignored)
+                    .chain([#(#after_ignored),*].into_iter())
+                    .into_iter()
+                    .collect::<Vec<_>>()
 
-                ),
-                (true, false, false) => quote!(
-                    #ignored
-                        .chain([#(#after_ignored),*].into_iter())
-                        .into_iter()
-                        .collect::<Vec<_>>()
-                ),
-                _ => todo!(),
-            };
+            ),
+            (true, false, false) => quote!(
+                #ignored
+                    .chain([#(#after_ignored),*].into_iter())
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            ),
+            _ => todo!(),
+        };
 
-            let code = quote! {{
-                use einops::Backend;
+        quote!(
+            let #tensor_ident = Backend::reshape(&#tensor_ident, &#composition_shape);
+        )
+    }
 
-                let #shape_ident = Backend::shape(&#tensor_ident);
+    fn to_tokens_repeat(
+        repeat: &Vec<(Index, usize)>,
+        tensor_ident: &syn::Ident,
+        ignored_len_ident: &syn::Ident,
+        shape_ident: &syn::Ident,
+    ) -> proc_macro2::TokenStream {
+        let n_repeats = repeat.len();
+        let repeat_pos_len = repeat.iter().map(|expression| match expression {
+            (Index::Known(index), len) => quote!((#index, #len)),
+            (Index::Unknown(index), len) => quote!((#index + #ignored_len_ident - 1, #len)),
+            _ => todo!(),
+        });
 
-                #ignored_len
+        quote!(
+            let #tensor_ident = Backend::add_axes(
+                &#tensor_ident, #shape_ident.len() + #n_repeats, &[#(#repeat_pos_len),*]
+            );
+        )
+    }
 
-                let #tensor_ident = Backend::reshape(&#tensor_ident, &#decomposition_shape);
+    fn to_tokens_permute(
+        permute: &Vec<Index>,
+        tensor_ident: &syn::Ident,
+        ignored_len_ident: &syn::Ident,
+    ) -> proc_macro2::TokenStream {
+        let (before_ignored, ignored_permute, after_ignored, _) = permute.iter().fold(
+            (
+                Vec::new(),
+                proc_macro2::TokenStream::new(),
+                Vec::new(),
+                false,
+            ),
+            |(mut before_ignored, mut ignored_permute, mut after_ignored, mut is_after_ignored),
+             p| {
+                let mut insert_index = |index| {
+                    if is_after_ignored {
+                        after_ignored.push(index);
+                    } else {
+                        before_ignored.push(index);
+                    }
+                };
+                match p {
+                    Index::Known(index) => {
+                        insert_index(quote!(#index));
+                    }
+                    Index::Range(index) => {
+                        is_after_ignored = true;
+                        ignored_permute = quote!(
+                            (#index..(#index + #ignored_len_ident)).into_iter()
+                        )
+                    }
+                    Index::Unknown(index) => {
+                        insert_index(quote!(#index + #ignored_len_ident - 1));
+                    }
+                };
+                (
+                    before_ignored,
+                    ignored_permute,
+                    after_ignored,
+                    is_after_ignored,
+                )
+            },
+        );
 
-                let #tensor_ident = Backend::reduce_axes_v2(
-                    &#tensor_ident, &mut [#((#reduce_indices, #reduce_operations)),*]
-                );
+        let permute_indices = match (
+            before_ignored.is_empty(),
+            ignored_permute.is_empty(),
+            after_ignored.is_empty(),
+        ) {
+            (false, true, true) => quote!([#(#before_ignored),*]),
+            (false, false, true) => quote!(
+                [#(#before_ignored),*]
+                    .into_iter()
+                    .chain(#ignored_permute)
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            ),
+            (false, false, false) => quote!(
+                [#(#before_ignored),*]
+                    .into_iter()
+                    .chain(#ignored_permute)
+                    .chain([#(#after_ignored),*].into_iter())
+                    .into_iter()
+                    .collect::<Vec<_>>()
 
-                let #tensor_ident = Backend::transpose(&#tensor_ident, &#permute_indices);
+            ),
+            (true, false, false) => quote!(
+                #ignored_permute
+                    .chain([#(#after_ignored),*].into_iter())
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            ),
+            _ => todo!(),
+        };
 
-                let #shape_ident = Backend::shape(&#tensor_ident);
+        quote!(
+            let #tensor_ident = Backend::transpose(&#tensor_ident, &#permute_indices);
+        )
+    }
 
-                let #tensor_ident = Backend::add_axes(
-                    &#tensor_ident, #shape_ident.len() + #n_repeats, &[#(#repeat_pos_len),*]
-                );
+    fn to_tokens_reduce(
+        reduce: &Vec<(Index, Operation)>,
+        tensor_ident: &syn::Ident,
+        ignored_len_ident: &syn::Ident,
+    ) -> proc_macro2::TokenStream {
+        let (reduce_indices, reduce_operations) = reduce.iter().fold(
+            (Vec::new(), Vec::new()),
+            |(mut reduce_indices, mut reduce_operations), expression| {
+                let (index, operation) = expression;
+                let index = match index {
+                    Index::Known(i) => quote!(#i),
+                    Index::Unknown(i) => quote!(#i + #ignored_len_ident - 1),
+                    _ => todo!(),
+                };
+                let operation = match operation {
+                    Operation::Min => quote!(einops::Operation::Min),
+                    Operation::Max => quote!(einops::Operation::Max),
+                    Operation::Sum => quote!(einops::Operation::Sum),
+                    Operation::Mean => quote!(einops::Operation::Mean),
+                    Operation::Prod => quote!(einops::Operation::Prod),
+                };
+                reduce_indices.push(index);
+                reduce_operations.push(operation);
+                (reduce_indices, reduce_operations)
+            },
+        );
 
-                let #shape_ident = Backend::shape(&#tensor_ident);
+        quote!(
+            let #tensor_ident = Backend::reduce_axes_v2(
+                &#tensor_ident, &mut [#((#reduce_indices, #reduce_operations)),*]
+            );
+        )
+    }
 
-                let #tensor_ident = Backend::reshape(&#tensor_ident, &#composition_shape);
+    fn to_tokens_decomposition(
+        left_expression: &Vec<LeftExpression>,
+        tensor_ident: &syn::Ident,
+        ignored_len_ident: &syn::Ident,
+        shape_ident: &syn::Ident,
+    ) -> proc_macro2::TokenStream {
+        let (known_indices, ignored_indices, unknown_indices) = left_expression.iter().fold(
+            (Vec::new(), proc_macro2::TokenStream::new(), Vec::new()),
+            |(mut known_indices, mut ignored_indices, mut unknown_indices), expression| {
+                match expression {
+                    LeftExpression::Named {
+                        index: Index::Known(_),
+                        shape: Some(size),
+                        ..
+                    } => known_indices.push(quote!(#size)),
+                    LeftExpression::Named {
+                        index: Index::Known(i),
+                        ..
+                    } => known_indices.push(quote!(#shape_ident[#i])),
+                    LeftExpression::Derived {
+                        index: Index::Known(i),
+                        shape_calc,
+                        ..
+                    } => known_indices.push(quote!(#shape_ident[#i] / #shape_calc)),
+                    LeftExpression::Named {
+                        index: Index::Range(i),
+                        ..
+                    } => {
+                        ignored_indices = quote!(
+                            (#i..(#i + #ignored_len_ident)).into_iter().map(|i| #shape_ident[i])
+                        );
+                    }
+                    LeftExpression::Named {
+                        index: Index::Unknown(i),
+                        ..
+                    } => unknown_indices.push(quote!(#shape_ident[#i + #ignored_len_ident - 1])),
+                    LeftExpression::Derived {
+                        index: Index::Unknown(i),
+                        shape_calc,
+                        ..
+                    } => unknown_indices
+                        .push(quote!(#shape_ident[#i + #ignored_len_ident - 1] / #shape_calc)),
+                    _ => todo!(),
+                }
+                (known_indices, ignored_indices, unknown_indices)
+            },
+        );
 
-                #tensor_ident
+        let decomposition_shape = match (
+            known_indices.is_empty(),
+            ignored_indices.is_empty(),
+            unknown_indices.is_empty(),
+        ) {
+            (false, true, true) => {
+                quote!([#(#known_indices),*])
+            }
+            (false, false, true) => quote!(
+                [#(#known_indices),*]
+                    .into_iter()
+                    .chain(#ignored_indices)
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            ),
+            (false, false, false) => quote!(
+                [#(#known_indices),*]
+                    .into_iter()
+                    .chain(#ignored_indices)
+                    .chain([#(#unknown_indices),*].into_iter())
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            ),
+            (true, false, false) => quote!(
+                #ignored_indices
+                    .chain([#(#unknown_indices),*].into_iter())
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            ),
+            _ => todo!(),
+        };
 
-                //let #tensor_ident = Backend::reshape(&#tensor_ident, &[#(#decompose_iter),*]);
-            }};
-
-            code.to_tokens(tokens);
-
-            //todo!();
-
-            //let shapes = &self.permute;
-            //let reshape = &self.reshape;
-            //let explode = &self.explode;
-
-            //let v: Vec<proc_macro2::TokenStream> = explode
-            //.iter()
-            //.map(|e| match e {
-            //Explode::Derived { index, shape } => {
-            //let shape = shape.unwrap();
-            //return quote!(Backend::shape(&#tensor)[#index] / #shape);
-            //}
-            //Explode::Shape(shape) => quote!(#shape),
-            //Explode::Index(index) => quote!(Backend::shape(&#tensor)[#index]),
-            //_ => todo!(),
-            //})
-            //.collect();
-
-            //let code = quote! {{
-            //use einops::Backend;
-
-            //let #tensor = Backend::reshape(&#tensor, &[#(#v),*]);
-
-            //let #tensor = Backend::transpose(&#tensor, &[
-            //#(#shapes),*
-            //]);
-
-            //let shape = Backend::shape(&#tensor);
-            //let #tensor = Backend::reshape(&#tensor, &[
-            //#([#(shape[#reshape]),*].iter().product()),*
-            //]);
-
-            //#tensor
-            //}};
-
-            //code.to_tokens(tokens);
-        }
+        quote!(
+            let #tensor_ident = Backend::reshape(&#tensor_ident, &#decomposition_shape);
+        )
     }
 }
