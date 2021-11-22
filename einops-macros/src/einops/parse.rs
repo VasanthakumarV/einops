@@ -70,7 +70,7 @@ pub enum Operation {
     Prod,
 }
 
-pub fn parse_decomposition(input: ParseStream) -> Vec<Decomposition> {
+pub fn parse_decomposition(input: ParseStream) -> syn::Result<Vec<Decomposition>> {
     let (decomposition, _) = (0..)
         .into_iter()
         .take_while(|_| {
@@ -80,17 +80,17 @@ pub fn parse_decomposition(input: ParseStream) -> Vec<Decomposition> {
             }
             true
         })
-        .fold(
+        .try_fold(
             (
                 Vec::new(),
                 Box::new(Index::Known) as Box<dyn Fn(usize) -> Index>,
             ),
             |(mut decomposition, mut index_fn), i| {
                 if input.peek(syn::token::Paren) {
-                    let content_expression = parse_left_parenthesized(input, index_fn(i)).unwrap();
+                    let content_expression = parse_left_parenthesized(input, index_fn(i))?;
                     decomposition.extend(content_expression);
                 } else if peek_reduce_kw(input) {
-                    let (name, shape, operation) = parse_reduce_fn(input).unwrap();
+                    let (name, shape, operation) = parse_reduce_fn(input)?;
                     decomposition.push(Decomposition::Named {
                         name,
                         index: index_fn(i),
@@ -98,7 +98,7 @@ pub fn parse_decomposition(input: ParseStream) -> Vec<Decomposition> {
                         operation: Some(operation),
                     });
                 } else if input.peek(syn::Ident) {
-                    let (name, shape) = parse_identifier(input).unwrap();
+                    let (name, shape) = parse_identifier(input)?;
                     decomposition.push(Decomposition::Named {
                         name,
                         shape,
@@ -106,9 +106,13 @@ pub fn parse_decomposition(input: ParseStream) -> Vec<Decomposition> {
                         operation: None,
                     });
                 } else if input.peek(syn::LitInt) {
-                    todo!("parse_int");
+                    let lit_int = input.parse::<syn::LitInt>()?;
+                    return Err(input.error(format!(
+                        "Literat Int {}, not allowed on the left side",
+                        lit_int.to_string()
+                    )));
                 } else if input.peek(syn::Token![..]) {
-                    input.parse::<syn::Token![..]>().unwrap();
+                    input.parse::<syn::Token![..]>()?;
                     decomposition.push(Decomposition::Named {
                         name: "..".to_string(),
                         index: Index::Range(i),
@@ -116,12 +120,14 @@ pub fn parse_decomposition(input: ParseStream) -> Vec<Decomposition> {
                         operation: None,
                     });
                     index_fn = Box::new(Index::Unknown);
+                } else {
+                    todo!();
                 }
-                (decomposition, index_fn)
+                Ok((decomposition, index_fn))
             },
-        );
+        )?;
 
-    decomposition
+    Ok(decomposition)
 }
 
 fn parse_left_parenthesized(input: ParseStream, index: Index) -> syn::Result<Vec<Decomposition>> {
@@ -130,18 +136,32 @@ fn parse_left_parenthesized(input: ParseStream, index: Index) -> syn::Result<Vec
 
     let mut content_expression = Vec::new();
 
-    let (derived_name, derived_index, running_mul) =
-        (0..).into_iter().take_while(|_| !content.is_empty()).fold(
+    let (derived_name, derived_index, running_mul) = (0..)
+        .into_iter()
+        .take_while(|_| !content.is_empty())
+        .try_fold(
             (None, None, 1),
             |(mut derived_name, mut derived_index, mut running_mul), i| {
                 let (name, shape, operation) = if peek_reduce_kw(&content) {
-                    let (name, shape, operation) = parse_reduce_fn(&content).unwrap();
+                    let (name, shape, operation) = parse_reduce_fn(&content)?;
                     (name, shape, Some(operation))
                 } else if content.peek(syn::Ident) {
-                    let (name, shape) = parse_identifier(&content).unwrap();
+                    let (name, shape) = parse_identifier(&content)?;
                     (name, shape, None)
+                } else if content.peek(syn::Token![..]) {
+                    return Err(
+                        content.error("Ignore symbol '..' not allowed inside brackets on the left")
+                    );
+                } else if content.peek(syn::LitInt) {
+                    let lit_int = content.parse::<syn::LitInt>()?;
+                    return Err(content.error(format!(
+                        "Anonymous integer {} is not allowed inside brackets on the left",
+                        lit_int.to_string()
+                    )));
                 } else {
-                    todo!();
+                    return Err(content.error(
+                        "Unknown character found inside the brackets of the left expression",
+                    ));
                 };
                 if let Some(size) = shape {
                     running_mul *= size;
@@ -155,9 +175,9 @@ fn parse_left_parenthesized(input: ParseStream, index: Index) -> syn::Result<Vec
                     derived_name = Some(name.clone());
                     derived_index = Some(i);
                 }
-                (derived_name, derived_index, running_mul)
+                Ok((derived_name, derived_index, running_mul))
             },
-        );
+        )?;
 
     if let Some(derived_index) = derived_index {
         content_expression.insert(
@@ -198,7 +218,7 @@ pub fn parse_reduce(decomposition: &Vec<Decomposition>) -> Vec<(Index, Operation
 pub fn parse_composition_permute_repeat(
     input: ParseStream,
     decomposition: &Vec<Decomposition>,
-) -> (Vec<Composition>, Vec<Index>, Vec<(Index, usize)>) {
+) -> syn::Result<(Vec<Composition>, Vec<Index>, Vec<(Index, usize)>)> {
     let positions = decomposition
         .iter()
         .filter(|expression| {
@@ -211,8 +231,8 @@ pub fn parse_composition_permute_repeat(
             )
         })
         .enumerate()
-        .fold(HashMap::new(), |mut map, (i, expression)| {
-            match expression {
+        .try_fold(HashMap::new(), |mut map, (i, expression)| {
+            let old_value = match expression {
                 Decomposition::Named {
                     name,
                     index: Index::Known(_),
@@ -240,48 +260,64 @@ pub fn parse_composition_permute_repeat(
                 } => map.insert(name.clone(), Index::Range(i)),
                 _ => todo!(),
             };
-            map
-        });
+            if let Some(_) = old_value {
+                return Err(input.error("Names are not unique in the left expression"));
+            }
+            Ok(map)
+        })?;
 
     let mut parenthesized_len: usize = 0;
-    let (composition, permute, repeat, _) =
-        (0..).into_iter().take_while(|_| !input.is_empty()).fold(
-            (
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Box::new(Index::Known) as Box<dyn Fn(usize) -> Index>,
-            ),
-            |(mut composition, mut permute, mut repeat, mut index_fn), mut i| {
-                i += parenthesized_len.saturating_sub(1);
-                if input.peek(token::Paren) {
-                    let (combined, combined_permute, combined_repeat, combined_len) =
-                        parse_right_parenthesized(input, i, &mut index_fn, &positions).unwrap();
-                    parenthesized_len += combined_len;
-                    permute.extend(combined_permute);
-                    repeat.extend(combined_repeat);
-                    composition.push(combined);
-                } else if input.peek(syn::Ident) {
-                    let (name, shape) = parse_identifier(input).unwrap();
-                    if let Some(index) = positions.get(&name) {
-                        permute.push(index.clone());
-                    } else {
-                        repeat.push((index_fn(i), shape.unwrap()));
-                    }
-                    composition.push(Composition::Individual(index_fn(i)))
-                } else if input.peek(syn::LitInt) {
-                    repeat.push((index_fn(i), parse_usize(input).unwrap()));
-                    composition.push(Composition::Individual(index_fn(i)));
-                } else if input.peek(syn::Token![..]) {
-                    input.parse::<syn::Token![..]>().unwrap();
-                    composition.push(Composition::Individual(Index::Range(i)));
-                    permute.push(positions.get("..").unwrap().clone());
-                    index_fn = Box::new(Index::Unknown);
+    let (composition, permute, repeat, _) = (0..)
+        .into_iter()
+        .take_while(|_| !input.is_empty())
+        .try_fold::<_, _, syn::Result<(_, _, _, _)>>(
+        (
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Box::new(Index::Known) as Box<dyn Fn(usize) -> Index>,
+        ),
+        |(mut composition, mut permute, mut repeat, mut index_fn), mut i| {
+            i += parenthesized_len.saturating_sub(1);
+            if input.peek(token::Paren) {
+                let (combined, combined_permute, combined_repeat, combined_len) =
+                    parse_right_parenthesized(input, i, &mut index_fn, &positions)?;
+                parenthesized_len += combined_len;
+                permute.extend(combined_permute);
+                repeat.extend(combined_repeat);
+                composition.push(combined);
+            } else if input.peek(syn::Ident) {
+                let (name, shape) = parse_identifier(input)?;
+                if let Some(index) = positions.get(&name) {
+                    permute.push(index.clone());
+                } else {
+                    repeat.push((
+                        index_fn(i),
+                        shape.expect("New identifier on the right should have a shape"),
+                    ));
                 }
-                (composition, permute, repeat, index_fn)
-            },
-        );
-    (composition, permute, repeat)
+                composition.push(Composition::Individual(index_fn(i)))
+            } else if input.peek(syn::LitInt) {
+                repeat.push((index_fn(i), parse_usize(input)?));
+                composition.push(Composition::Individual(index_fn(i)));
+            } else if input.peek(syn::Token![..]) {
+                input.parse::<syn::Token![..]>()?;
+                composition.push(Composition::Individual(Index::Range(i)));
+                permute.push(
+                    positions
+                        .get("..")
+                        .expect("Ignore should be on both sides of the expression")
+                        .clone(),
+                );
+                index_fn = Box::new(Index::Unknown);
+            } else {
+                todo!();
+            }
+            Ok((composition, permute, repeat, index_fn))
+        },
+    )?;
+
+    Ok((composition, permute, repeat))
 }
 
 fn parse_right_parenthesized(
@@ -296,34 +332,43 @@ fn parse_right_parenthesized(
     let mut permute = Vec::new();
     let mut repeat = Vec::new();
 
-    let mut parse_content = |content: ParseStream, index: usize| -> Index {
+    let mut parse_content = |content: ParseStream, index: usize| -> syn::Result<Index> {
         if content.peek(syn::Token![..]) {
-            content.parse::<syn::Token![..]>().unwrap();
-            permute.push(positions.get("..").unwrap().clone());
+            content.parse::<syn::Token![..]>()?;
+            permute.push(
+                positions
+                    .get("..")
+                    .expect("Ignore should be on both sides of the expressions")
+                    .clone(),
+            );
             *index_fn = Box::new(Index::Unknown);
-            Index::Range(index)
+            Ok(Index::Range(index))
         } else if content.peek(syn::Ident) {
-            let (name, shape) = parse_identifier(&content).unwrap();
+            let (name, shape) = parse_identifier(&content)?;
             if let Some(index) = positions.get(&name) {
                 permute.push(index.clone());
             } else {
-                repeat.push((index_fn(index), shape.unwrap()));
+                repeat.push((
+                    index_fn(index),
+                    shape.expect("New identifier with no shape specified on the right side"),
+                ));
             }
-            index_fn(index)
+            Ok(index_fn(index))
         } else if content.peek(syn::LitInt) {
-            repeat.push((index_fn(index), parse_usize(content).unwrap()));
-            index_fn(index)
+            repeat.push((index_fn(index), parse_usize(content)?));
+            Ok(index_fn(index))
         } else {
             todo!();
         }
     };
 
-    let from = parse_content(&content, start_index);
+    let from = parse_content(&content, start_index)?;
 
     let to = ((start_index + 1)..)
         .into_iter()
         .take_while(|_| !content.is_empty())
-        .fold(None, |_, i| Some(parse_content(&content, i)));
+        .fold(None, |_, i| Some(parse_content(&content, i)))
+        .transpose()?;
 
     let len = if let Some(Index::Known(end_index) | Index::Unknown(end_index)) = to {
         end_index - (start_index - 1)

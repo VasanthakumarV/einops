@@ -48,12 +48,12 @@ struct Expression {
 
 impl syn::parse::Parse for Expression {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let decomposition = parse_decomposition(&input);
+        let decomposition = parse_decomposition(&input)?;
 
         let reduce = parse_reduce(&decomposition);
 
         let (composition, permute, repeat) =
-            parse_composition_permute_repeat(&input, &decomposition);
+            parse_composition_permute_repeat(&input, &decomposition)?;
 
         Ok(Expression {
             decomposition,
