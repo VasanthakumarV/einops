@@ -19,7 +19,7 @@ tch-bindings = ["tch"]
 [dependencies]
 thiserror = "1.0"
 tch = { version = "0.5", optional = true }
-einops-macro = { path = "src/macro" }
+einops-macros = { path = "einops-macros" }
 
 [package.metadata.docs.rs]
 no-default-features = true

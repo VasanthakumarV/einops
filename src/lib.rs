@@ -75,7 +75,7 @@ mod backend;
 mod error;
 mod recipe;
 
-pub use einops_macro::rearrange;
+pub use einops_macros::einops;
 
 pub use backend::Backend;
 pub use backend::{RearrangeFn, ReduceFn, RepeatFn};
