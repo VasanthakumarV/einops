@@ -141,6 +141,8 @@ pub fn to_tokens_composition(
     };
 
     quote!(
+        let #shape_ident = Backend::shape(&#tensor_ident);
+
         let #tensor_ident = Backend::reshape(&#tensor_ident, &#composition_shape);
     )
 }
@@ -159,6 +161,8 @@ pub fn to_tokens_repeat(
     });
 
     quote!(
+        let #shape_ident = Backend::shape(&#tensor_ident);
+
         let #tensor_ident = Backend::add_axes(
             &#tensor_ident, #shape_ident.len() + #n_repeats, &[#(#repeat_pos_len),*]
         );
@@ -359,6 +363,8 @@ pub fn to_tokens_decomposition(
     };
 
     quote!(
+        let #shape_ident = Backend::shape(&#tensor_ident);
+
         let #tensor_ident = Backend::reshape(&#tensor_ident, &#decomposition_shape);
     )
 }

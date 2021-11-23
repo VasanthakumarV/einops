@@ -82,28 +82,6 @@ impl quote::ToTokens for ParsedExpression {
         let shape_ident = format_ident!("{}_{}", tensor_ident, "shape");
         let ignored_len_ident = format_ident!("{}", "ignored_len");
 
-        let shape_tokens = quote!(
-            let #shape_ident = Backend::shape(&#tensor_ident);
-        );
-
-        let ignored_len_tokens = match left_expression.last().unwrap() {
-            Decomposition::Named {
-                index: Index::Unknown(i),
-                ..
-            }
-            | Decomposition::Derived {
-                index: Index::Unknown(i),
-                ..
-            }
-            | Decomposition::Named {
-                index: Index::Range(i),
-                ..
-            } => {
-                quote!(let #ignored_len_ident = #shape_ident.len() - #i;)
-            }
-            _ => proc_macro2::TokenStream::new(),
-        };
-
         let decomposition_tokens = if left_expression
             .iter()
             .any(|expression| matches!(expression, Decomposition::Derived { .. }))
@@ -150,10 +128,39 @@ impl quote::ToTokens for ParsedExpression {
             proc_macro2::TokenStream::new()
         };
 
+        let ignored_len_tokens = if [
+            composition_tokens.is_empty(),
+            repeat_tokens.is_empty(),
+            permute_tokens.is_empty(),
+            reduce_tokens.is_empty(),
+            decomposition_tokens.is_empty(),
+        ]
+        .iter()
+        .any(|x| !x)
+        {
+            match left_expression.last().unwrap() {
+                Decomposition::Named {
+                    index: Index::Unknown(i),
+                    ..
+                }
+                | Decomposition::Derived {
+                    index: Index::Unknown(i),
+                    ..
+                }
+                | Decomposition::Named {
+                    index: Index::Range(i),
+                    ..
+                } => {
+                    quote!(let #ignored_len_ident = #shape_ident.len() - #i;)
+                }
+                _ => proc_macro2::TokenStream::new(),
+            }
+        } else {
+            proc_macro2::TokenStream::new()
+        };
+
         let code = quote! {{
             use einops::Backend;
-
-            #shape_tokens
 
             #ignored_len_tokens
 
@@ -163,11 +170,7 @@ impl quote::ToTokens for ParsedExpression {
 
             #permute_tokens
 
-            #shape_tokens
-
             #repeat_tokens
-
-            #shape_tokens
 
             #composition_tokens
 
