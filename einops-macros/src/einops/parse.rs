@@ -278,11 +278,11 @@ pub fn parse_composition_permute_repeat(
             Box::new(Index::Known) as Box<dyn Fn(usize) -> Index>,
         ),
         |(mut composition, mut permute, mut repeat, mut index_fn), mut i| {
-            i += parenthesized_len.saturating_sub(1);
+            i += parenthesized_len;
             if input.peek(token::Paren) {
                 let (combined, combined_permute, combined_repeat, combined_len) =
                     parse_right_parenthesized(input, i, &mut index_fn, &positions)?;
-                parenthesized_len += combined_len;
+                parenthesized_len += combined_len.saturating_sub(1);
                 permute.extend(combined_permute);
                 repeat.extend(combined_repeat);
                 composition.push(combined);
@@ -371,7 +371,7 @@ fn parse_right_parenthesized(
         .transpose()?;
 
     let len = if let Some(Index::Known(end_index) | Index::Unknown(end_index)) = to {
-        end_index - (start_index - 1)
+        (end_index - start_index) + 1
     } else {
         0
     };
