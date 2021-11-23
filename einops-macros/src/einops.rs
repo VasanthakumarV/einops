@@ -72,22 +72,22 @@ impl quote::ToTokens for ParsedExpression {
             ref expression,
         } = self;
         let Expression {
-            decomposition: ref left_expression,
+            ref decomposition,
             ref reduce,
             ref permute,
             ref repeat,
-            composition: ref right_expression,
+            ref composition,
         } = expression;
 
         let shape_ident = format_ident!("{}_{}", tensor_ident, "shape");
         let ignored_len_ident = format_ident!("{}", "ignored_len");
 
-        let decomposition_tokens = if left_expression
+        let decomposition_tokens = if decomposition
             .iter()
             .any(|expression| matches!(expression, Decomposition::Derived { .. }))
         {
             to_tokens_decomposition(
-                left_expression,
+                decomposition,
                 &tensor_ident,
                 &ignored_len_ident,
                 &shape_ident,
@@ -114,12 +114,12 @@ impl quote::ToTokens for ParsedExpression {
             proc_macro2::TokenStream::new()
         };
 
-        let composition_tokens = if right_expression
+        let composition_tokens = if composition
             .iter()
             .any(|expression| matches!(expression, Composition::Combined { .. }))
         {
             to_tokens_composition(
-                right_expression,
+                composition,
                 &tensor_ident,
                 &ignored_len_ident,
                 &shape_ident,
@@ -138,7 +138,7 @@ impl quote::ToTokens for ParsedExpression {
         .iter()
         .any(|x| !x)
         {
-            match left_expression.last().unwrap() {
+            match decomposition.last().unwrap() {
                 Decomposition::Named {
                     index: Index::Unknown(i),
                     ..
