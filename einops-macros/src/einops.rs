@@ -160,8 +160,6 @@ impl quote::ToTokens for ParsedExpression {
         };
 
         let code = quote! {{
-            use einops::Backend;
-
             #ignored_len_tokens
 
             #decomposition_tokens
