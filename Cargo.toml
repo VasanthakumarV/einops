@@ -2,7 +2,7 @@
 name = "einops"
 version = "0.2.1"
 authors = ["VasanthakumarV <vasanth260m12@gmail.com>"]
-edition = "2018"
+edition = "2021"
 description = "Simplistic API for deep learning tensor operations"
 license = "MIT OR Apache-2.0"
 keywords = ["deep-learning", "tensor", "tch"]
