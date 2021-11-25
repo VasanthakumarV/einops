@@ -128,16 +128,20 @@ impl quote::ToTokens for ParsedExpression {
             proc_macro2::TokenStream::new()
         };
 
-        let ignored_len_tokens = if [
-            composition_tokens.is_empty(),
-            repeat_tokens.is_empty(),
-            permute_tokens.is_empty(),
-            reduce_tokens.is_empty(),
+        // NOTE Do not change the order
+        let tokens_empty = [
             decomposition_tokens.is_empty(),
-        ]
-        .iter()
-        .any(|x| !x)
-        {
+            reduce_tokens.is_empty(),
+            permute_tokens.is_empty(),
+            repeat_tokens.is_empty(),
+            composition_tokens.is_empty(),
+        ];
+
+        let ignored_len_tokens = if tokens_empty.iter().all(|x| *x) {
+            quote!(compile_error!(
+                "No transformations applied, no need for einops"
+            );)
+        } else {
             match decomposition.last().unwrap() {
                 Decomposition::Named {
                     index: Index::Unknown(i),
