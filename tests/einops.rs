@@ -2,7 +2,7 @@ use einops::einops;
 use tch::{Device, IndexOp, Kind, Tensor};
 
 #[test]
-fn einops_consistency() {
+fn consistency_checks() {
     let input = Tensor::arange(1 * 2 * 3 * 5 * 7 * 11, (Kind::Float, Device::Cpu))
         .reshape(&[1, 2, 3, 5, 7, 11]);
 
@@ -25,3 +25,17 @@ fn einops_consistency() {
     assert_eq!(input.i((1, 2, 3)), output.i((2, 3, 1)));
     assert_eq!(input.i((0, 1, 2)), output.i((1, 2, 0)));
 }
+
+//#[test]
+//fn identity_patterns() {
+//macro_rules! test {
+//($pattern:literal, $tensor:ident) => {
+//let output = einops!($pattern, $tensor);
+//assert_eq!($tensor, output, "{} failed", $pattern);
+//};
+//}
+
+//let input =
+//Tensor::arange(2 * 3 * 4 * 5 * 6, (Kind::Float, Device::Cpu)).reshape(&[2, 3, 4, 5, 6]);
+//test!(".. -> ..", input);
+//}

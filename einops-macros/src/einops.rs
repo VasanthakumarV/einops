@@ -15,7 +15,7 @@ use tokens::{
 
 pub fn einops(input: proc_macro2::TokenStream) -> syn::Result<proc_macro2::TokenStream> {
     let parsed_expression: ParsedExpression = syn::parse2(input)?;
-    let code = quote! { #parsed_expression};
+    let code = quote! { #parsed_expression };
     Ok(code)
 }
 
@@ -118,12 +118,7 @@ impl quote::ToTokens for ParsedExpression {
             .iter()
             .any(|expression| matches!(expression, Composition::Combined { .. }))
         {
-            to_tokens_composition(
-                composition,
-                &tensor_ident,
-                &ignored_len_ident,
-                &shape_ident,
-            )
+            to_tokens_composition(composition, &tensor_ident, &ignored_len_ident, &shape_ident)
         } else {
             proc_macro2::TokenStream::new()
         };
@@ -159,11 +154,33 @@ impl quote::ToTokens for ParsedExpression {
                 }
                 _ => proc_macro2::TokenStream::new(),
             }
-        } else {
+        };
+
+        let shape_tokens = if ignored_len_tokens.is_empty() && decomposition_tokens.is_empty() {
             proc_macro2::TokenStream::new()
+        } else {
+            quote!(let #shape_ident = einops::Backend::shape(&#tensor_ident);)
+        };
+
+        let repeat_shape_tokens = if repeat_tokens.is_empty()
+            || (tokens_empty.iter().take(3).all(|x| *x) && !ignored_len_tokens.is_empty())
+        {
+            proc_macro2::TokenStream::new()
+        } else {
+            quote!(let #shape_ident = einops::Backend::shape(&#tensor_ident);)
+        };
+
+        let composition_shape_tokens = if composition_tokens.is_empty()
+            || (tokens_empty.iter().take(4).all(|x| *x) && !ignored_len_tokens.is_empty())
+        {
+            proc_macro2::TokenStream::new()
+        } else {
+            quote!(let #shape_ident = einops::Backend::shape(&#tensor_ident);)
         };
 
         let code = quote! {{
+            #shape_tokens
+
             #ignored_len_tokens
 
             #decomposition_tokens
@@ -172,8 +189,10 @@ impl quote::ToTokens for ParsedExpression {
 
             #permute_tokens
 
+            #repeat_shape_tokens
             #repeat_tokens
 
+            #composition_shape_tokens
             #composition_tokens
 
             #tensor_ident
