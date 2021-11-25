@@ -70,8 +70,8 @@ pub enum Operation {
     Prod,
 }
 
-pub fn parse_decomposition(input: ParseStream) -> syn::Result<Vec<Decomposition>> {
-    let (decomposition, _) = (0..)
+pub fn parse_decomposition(input: ParseStream) -> syn::Result<(Vec<Decomposition>, bool)> {
+    let (decomposition, requires_squeeze, _) = (0..)
         .into_iter()
         .take_while(|_| {
             if input.peek(syn::Token![->]) {
@@ -83,9 +83,10 @@ pub fn parse_decomposition(input: ParseStream) -> syn::Result<Vec<Decomposition>
         .try_fold(
             (
                 Vec::new(),
+                false,
                 Box::new(Index::Known) as Box<dyn Fn(usize) -> Index>,
             ),
-            |(mut decomposition, mut index_fn), i| {
+            |(mut decomposition, mut requires_squeeze, mut index_fn), i| {
                 if input.peek(syn::token::Paren) {
                     let content_expression = parse_left_parenthesized(input, index_fn(i))?;
                     decomposition.extend(content_expression);
@@ -107,10 +108,13 @@ pub fn parse_decomposition(input: ParseStream) -> syn::Result<Vec<Decomposition>
                     });
                 } else if input.peek(syn::LitInt) {
                     let lit_int = input.parse::<syn::LitInt>()?;
-                    return Err(input.error(format!(
-                        "Literat Int {}, not allowed on the left side",
-                        lit_int.to_string()
-                    )));
+                    if lit_int.base10_parse::<usize>()? != 1 {
+                        return Err(input.error(format!(
+                            "Literal Int {} not allowed on the left side",
+                            lit_int.to_string()
+                        )));
+                    }
+                    requires_squeeze = true;
                 } else if input.peek(syn::Token![..]) {
                     input.parse::<syn::Token![..]>()?;
                     decomposition.push(Decomposition::Named {
@@ -123,11 +127,11 @@ pub fn parse_decomposition(input: ParseStream) -> syn::Result<Vec<Decomposition>
                 } else {
                     todo!();
                 }
-                Ok((decomposition, index_fn))
+                Ok((decomposition, requires_squeeze, index_fn))
             },
         )?;
 
-    Ok(decomposition)
+    Ok((decomposition, requires_squeeze))
 }
 
 fn parse_left_parenthesized(input: ParseStream, index: Index) -> syn::Result<Vec<Decomposition>> {

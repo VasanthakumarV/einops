@@ -39,6 +39,7 @@ impl syn::parse::Parse for ParsedExpression {
 
 #[derive(Debug)]
 struct Expression {
+    requires_squeeze: bool,
     decomposition: Vec<Decomposition>,
     reduce: Vec<(Index, Operation)>,
     permute: Vec<Index>,
@@ -48,7 +49,7 @@ struct Expression {
 
 impl syn::parse::Parse for Expression {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let decomposition = parse_decomposition(&input)?;
+        let (decomposition, requires_squeeze) = parse_decomposition(&input)?;
 
         let reduce = parse_reduce(&decomposition);
 
@@ -56,6 +57,7 @@ impl syn::parse::Parse for Expression {
             parse_composition_permute_repeat(&input, &decomposition)?;
 
         Ok(Expression {
+            requires_squeeze,
             decomposition,
             reduce,
             permute,
@@ -72,6 +74,7 @@ impl quote::ToTokens for ParsedExpression {
             ref expression,
         } = self;
         let Expression {
+            requires_squeeze,
             ref decomposition,
             ref reduce,
             ref permute,
@@ -85,6 +88,7 @@ impl quote::ToTokens for ParsedExpression {
         let decomposition_tokens = if decomposition
             .iter()
             .any(|expression| matches!(expression, Decomposition::Derived { .. }))
+            || *requires_squeeze
         {
             to_tokens_decomposition(
                 decomposition,

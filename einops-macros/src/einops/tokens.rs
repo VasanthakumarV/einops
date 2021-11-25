@@ -103,7 +103,7 @@ pub fn to_tokens_composition(
                     );
                     insert_shape(shape);
                 }
-                _ => todo!("No"),
+                _ => todo!(),
             }
             (before_ignored, ignored, after_ignored, is_after_ignored)
         },
