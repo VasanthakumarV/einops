@@ -370,7 +370,10 @@ fn parse_right_parenthesized(
         .fold(None, |_, i| Some(parse_content(&content, i)))
         .transpose()?;
 
-    let len = if let Some(Index::Known(end_index) | Index::Unknown(end_index)) = to {
+    let len = if let Some(
+        Index::Known(end_index) | Index::Unknown(end_index) | Index::Range(end_index),
+    ) = to
+    {
         (end_index - start_index) + 1
     } else {
         0
