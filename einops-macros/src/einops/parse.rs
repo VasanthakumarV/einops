@@ -32,20 +32,20 @@ pub enum Composition {
     Combined { from: Index, to: Option<Index> },
 }
 
-#[derive(Debug, Clone, Eq, PartialOrd)]
+#[derive(Debug, Clone)]
 pub enum Index {
     Known(usize),
     Unknown(usize),
     Range(usize),
 }
 
-impl Ord for Index {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+impl PartialOrd for Index {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         match (self, other) {
             (
                 Index::Known(i) | Index::Unknown(i) | Index::Range(i),
                 Index::Known(j) | Index::Unknown(j) | Index::Range(j),
-            ) => i.cmp(&j),
+            ) => Some(i.cmp(&j)),
         }
     }
 }
