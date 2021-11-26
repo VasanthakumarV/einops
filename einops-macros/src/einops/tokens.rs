@@ -249,33 +249,89 @@ pub fn to_tokens_reduce(
     tensor_ident: &syn::Ident,
     ignored_len_ident: &syn::Ident,
 ) -> proc_macro2::TokenStream {
-    let (reduce_indices, reduce_operations) = reduce.iter().fold(
-        (Vec::new(), Vec::new()),
-        |(mut reduce_indices, mut reduce_operations), expression| {
-            let (index, operation) = expression;
-            let index = match index {
-                Index::Known(i) => quote!(#i),
-                Index::Unknown(i) => quote!(#i + #ignored_len_ident - 1),
-                _ => todo!(),
-            };
-            let operation = match operation {
-                Operation::Min => quote!(einops::Operation::Min),
-                Operation::Max => quote!(einops::Operation::Max),
-                Operation::Sum => quote!(einops::Operation::Sum),
-                Operation::Mean => quote!(einops::Operation::Mean),
-                Operation::Prod => quote!(einops::Operation::Prod),
-            };
-            reduce_indices.push(index);
-            reduce_operations.push(operation);
-            (reduce_indices, reduce_operations)
-        },
-    );
-
-    quote!(
-        let #tensor_ident = einops::Backend::reduce_axes_v2(
-            &#tensor_ident, &mut [#((#reduce_indices, #reduce_operations)),*]
+    let (reduce_indices, reduce_operations, ignored_indices, ignored_operations) =
+        reduce.iter().fold(
+            (Vec::new(), Vec::new(), None, None),
+            |(
+                mut reduce_indices,
+                mut reduce_operations,
+                mut ignored_indices,
+                mut ignored_operations,
+            ),
+             expression| {
+                let (index, operation) = expression;
+                let operation = match operation {
+                    Operation::Min => quote!(einops::Operation::Min),
+                    Operation::Max => quote!(einops::Operation::Max),
+                    Operation::Sum => quote!(einops::Operation::Sum),
+                    Operation::Mean => quote!(einops::Operation::Mean),
+                    Operation::Prod => quote!(einops::Operation::Prod),
+                };
+                match index {
+                    Index::Known(i) => {
+                        reduce_indices.push(quote!(#i));
+                        reduce_operations.push(operation);
+                    }
+                    Index::Unknown(i) => {
+                        reduce_indices.push(quote!(#i + #ignored_len_ident - 1));
+                        reduce_operations.push(operation);
+                    }
+                    Index::Range(i) => {
+                        ignored_indices = Some(quote!((#i..(#i + #ignored_len_ident)).into_iter()));
+                        ignored_operations =
+                            Some(quote!(std::iter::repeat(#operation).take(#ignored_len_ident)));
+                    }
+                }
+                (
+                    reduce_indices,
+                    reduce_operations,
+                    ignored_indices,
+                    ignored_operations,
+                )
+            },
         );
-    )
+
+    match (
+        ignored_indices,
+        ignored_operations,
+        reduce_indices.is_empty(),
+    ) {
+        (Some(ignored_indices), Some(ignored_operations), true) => {
+            quote!(
+                let #tensor_ident = einops::Backend::reduce_axes_v2(
+                    &#tensor_ident,
+                    &mut #ignored_indices
+                        .zip(#ignored_operations)
+                        .collect::<Vec<(_, _)>>()
+                );
+            )
+        }
+        (Some(ignored_indices), Some(ignored_operations), false) => {
+            quote!(
+                let #tensor_ident = einops::Backend::reduce_axes_v2(
+                    &#tensor_ident,
+                    &mut [#(#reduce_indices),*]
+                        .into_iter()
+                        .collect::<Vec<_>>()
+                        .chain(#ignored_indices)
+                        .zip(
+                            [#(#reduce_operations),*]
+                                .into_iter()
+                                .chain(#ignored_operations)
+                        )
+                        .collect::<Vec<(_, _)>>()
+                );
+            )
+        }
+        (None, None, false) => {
+            quote!(
+                let #tensor_ident = einops::Backend::reduce_axes_v2(
+                    &#tensor_ident, &mut [#((#reduce_indices, #reduce_operations)),*]
+                );
+            )
+        }
+        _ => todo!(),
+    }
 }
 
 pub fn to_tokens_decomposition(

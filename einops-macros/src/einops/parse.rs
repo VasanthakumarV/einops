@@ -71,6 +71,7 @@ pub enum Operation {
 }
 
 pub fn parse_decomposition(input: ParseStream) -> syn::Result<(Vec<Decomposition>, bool)> {
+    let mut parenthesized_len = 0;
     let (decomposition, requires_squeeze, _) = (0..)
         .into_iter()
         .take_while(|_| {
@@ -86,18 +87,34 @@ pub fn parse_decomposition(input: ParseStream) -> syn::Result<(Vec<Decomposition
                 false,
                 Box::new(Index::Known) as Box<dyn Fn(usize) -> Index>,
             ),
-            |(mut decomposition, mut requires_squeeze, mut index_fn), i| {
+            |(mut decomposition, mut requires_squeeze, mut index_fn), mut i| {
+                i += parenthesized_len;
                 if input.peek(syn::token::Paren) {
                     let content_expression = parse_left_parenthesized(input, index_fn(i))?;
                     decomposition.extend(content_expression);
                 } else if peek_reduce_kw(input) {
-                    let (name, shape, operation) = parse_reduce_fn(input)?;
-                    decomposition.push(Decomposition::Named {
-                        name,
-                        index: index_fn(i),
-                        shape,
-                        operation: Some(operation),
-                    });
+                    let identifiers = parse_reduce_fn(input)?;
+                    parenthesized_len += identifiers.len().saturating_sub(1);
+                    identifiers.into_iter().enumerate().for_each(
+                        |(inner_index, (name, shape, operation))| {
+                            if name == ".." {
+                                index_fn = Box::new(Index::Unknown);
+                                decomposition.push(Decomposition::Named {
+                                    name,
+                                    index: Index::Range(i + inner_index),
+                                    shape,
+                                    operation: Some(operation),
+                                });
+                            } else {
+                                decomposition.push(Decomposition::Named {
+                                    name,
+                                    index: index_fn(i + inner_index),
+                                    shape,
+                                    operation: Some(operation),
+                                });
+                            }
+                        },
+                    );
                 } else if input.peek(syn::Ident) {
                     let (name, shape) = parse_identifier(input)?;
                     decomposition.push(Decomposition::Named {
@@ -146,12 +163,35 @@ fn parse_left_parenthesized(input: ParseStream, index: Index) -> syn::Result<Vec
         .try_fold(
             (None, None, 1),
             |(mut derived_name, mut derived_index, mut running_mul), i| {
-                let (name, shape, operation) = if peek_reduce_kw(&content) {
-                    let (name, shape, operation) = parse_reduce_fn(&content)?;
-                    (name, shape, Some(operation))
+                let mut update_values = |name, shape, operation| {
+                    if let Some(size) = shape {
+                        running_mul *= size;
+                        content_expression.push(Decomposition::Named {
+                            name,
+                            index: index.clone(),
+                            operation,
+                            shape: Some(size),
+                        });
+                    } else {
+                        derived_name = Some(name.clone());
+                        derived_index = Some(i);
+                    }
+                };
+                if peek_reduce_kw(&content) {
+                    parse_reduce_fn(&content)?.into_iter().try_for_each(
+                        |(name, shape, operation)| {
+                            if name == ".." {
+                                return Err(content.error(
+                                    "Ignore symbol '..' not allowed inside brackets on the left",
+                                ));
+                            }
+                            update_values(name, shape, Some(operation));
+                            Ok(())
+                        },
+                    )?;
                 } else if content.peek(syn::Ident) {
                     let (name, shape) = parse_identifier(&content)?;
-                    (name, shape, None)
+                    update_values(name, shape, None)
                 } else if content.peek(syn::Token![..]) {
                     return Err(
                         content.error("Ignore symbol '..' not allowed inside brackets on the left")
@@ -167,18 +207,6 @@ fn parse_left_parenthesized(input: ParseStream, index: Index) -> syn::Result<Vec
                         "Unknown character found inside the brackets of the left expression",
                     ));
                 };
-                if let Some(size) = shape {
-                    running_mul *= size;
-                    content_expression.push(Decomposition::Named {
-                        name,
-                        index: index.clone(),
-                        operation,
-                        shape: Some(size),
-                    });
-                } else {
-                    derived_name = Some(name.clone());
-                    derived_index = Some(i);
-                }
                 Ok((derived_name, derived_index, running_mul))
             },
         )?;
@@ -214,6 +242,11 @@ pub fn parse_reduce(decomposition: &Vec<Decomposition>) -> Vec<(Index, Operation
                 operation: Some(operation),
                 ..
             } => Some((Index::Unknown(i), operation)),
+            Decomposition::Named {
+                index: Index::Range(_),
+                operation: Some(operation),
+                ..
+            } => Some((Index::Range(i), operation)),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -394,7 +427,7 @@ fn peek_reduce_kw(input: ParseStream) -> bool {
         | input.peek(kw::prod)
 }
 
-fn parse_reduce_fn(input: ParseStream) -> syn::Result<(String, Option<usize>, Operation)> {
+fn parse_reduce_fn(input: ParseStream) -> syn::Result<Vec<(String, Option<usize>, Operation)>> {
     let operation = if input.peek(kw::min) {
         input.parse::<kw::min>()?;
         Operation::Min
@@ -417,9 +450,25 @@ fn parse_reduce_fn(input: ParseStream) -> syn::Result<(String, Option<usize>, Op
     let content;
     syn::parenthesized!(content in input);
 
-    let (name, shape) = parse_identifier(&content)?;
+    Ok(content
+        .call(parse_identifiers)?
+        .into_iter()
+        .map(|(name, shape)| (name, shape, operation.clone()))
+        .collect())
+}
 
-    Ok((name, shape, operation))
+fn parse_identifiers(content: ParseStream) -> syn::Result<Vec<(String, Option<usize>)>> {
+    let mut identifiers = Vec::new();
+    while !content.is_empty() {
+        if content.peek(syn::Ident) {
+            let (name, shape) = content.call(parse_identifier)?;
+            identifiers.push((name, shape));
+        } else if content.peek(syn::Token![..]) {
+            content.parse::<syn::Token![..]>()?;
+            identifiers.push(("..".to_string(), None));
+        }
+    }
+    Ok(identifiers)
 }
 
 fn parse_identifier(input: ParseStream) -> syn::Result<(String, Option<usize>)> {
