@@ -28,7 +28,11 @@ struct ParsedExpression {
 impl syn::parse::Parse for ParsedExpression {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let expression: Expression = input.parse::<syn::LitStr>()?.parse()?;
+
         input.parse::<syn::Token![,]>()?;
+        if input.peek(syn::Token![&]) {
+            input.parse::<syn::Token![&]>()?;
+        }
 
         Ok(Self {
             tensor: input.parse::<syn::Ident>()?,
