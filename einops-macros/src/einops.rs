@@ -43,7 +43,7 @@ impl syn::parse::Parse for ParsedExpression {
 
 #[derive(Debug)]
 struct Expression {
-    requires_squeeze: bool,
+    requires_decomposition: bool,
     decomposition: Vec<Decomposition>,
     reduce: Vec<(Index, Operation)>,
     permute: Vec<Index>,
@@ -53,7 +53,7 @@ struct Expression {
 
 impl syn::parse::Parse for Expression {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let (decomposition, requires_squeeze) = parse_decomposition(&input)?;
+        let (decomposition, requires_decomposition) = parse_decomposition(&input)?;
 
         let reduce = parse_reduce(&decomposition);
 
@@ -61,7 +61,7 @@ impl syn::parse::Parse for Expression {
             parse_composition_permute_repeat(&input, &decomposition)?;
 
         Ok(Expression {
-            requires_squeeze,
+            requires_decomposition,
             decomposition,
             reduce,
             permute,
@@ -78,7 +78,7 @@ impl quote::ToTokens for ParsedExpression {
             ref expression,
         } = self;
         let Expression {
-            requires_squeeze,
+            requires_decomposition,
             ref decomposition,
             ref reduce,
             ref permute,
@@ -89,11 +89,7 @@ impl quote::ToTokens for ParsedExpression {
         let shape_ident = format_ident!("{}_{}", tensor_ident, "shape");
         let ignored_len_ident = format_ident!("{}", "ignored_len");
 
-        let decomposition_tokens = if decomposition
-            .iter()
-            .any(|expression| matches!(expression, Decomposition::Derived { .. }))
-            || *requires_squeeze
-        {
+        let decomposition_tokens = if *requires_decomposition {
             to_tokens_decomposition(
                 decomposition,
                 &tensor_ident,
@@ -164,10 +160,21 @@ impl quote::ToTokens for ParsedExpression {
             }
         };
 
-        let shape_tokens = if ignored_len_tokens.is_empty() && decomposition_tokens.is_empty() {
-            proc_macro2::TokenStream::new()
-        } else {
-            quote!(let #shape_ident = einops::Backend::shape(&#tensor_ident);)
+        let shape_tokens = match (
+            ignored_len_tokens.is_empty(),
+            decomposition_tokens.is_empty(),
+            decomposition.iter().any(|expression| {
+                matches!(
+                    expression,
+                    Decomposition::Derived { .. } | Decomposition::Named { shape: None, .. }
+                )
+            }),
+        ) {
+            (true, true, _) => proc_macro2::TokenStream::new(),
+            (false, _, _) | (_, false, true) => {
+                quote!(let #shape_ident = einops::Backend::shape(&#tensor_ident);)
+            }
+            (_, false, false) => proc_macro2::TokenStream::new(),
         };
 
         let repeat_shape_tokens = if repeat_tokens.is_empty()

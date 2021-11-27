@@ -103,7 +103,7 @@ pub fn to_tokens_composition(
                     );
                     insert_shape(shape);
                 }
-                _ => todo!(),
+                _ => todo!("tokens composition"),
             }
             (before_ignored, ignored, after_ignored, is_after_ignored)
         },
@@ -137,7 +137,7 @@ pub fn to_tokens_composition(
                 .into_iter()
                 .collect::<Vec<_>>()
         ),
-        _ => todo!(),
+        _ => todo!("tokens composition"),
     };
 
     quote!(
@@ -155,7 +155,7 @@ pub fn to_tokens_repeat(
     let repeat_pos_len = repeat.iter().map(|expression| match expression {
         (Index::Known(index), len) => quote!((#index, #len)),
         (Index::Unknown(index), len) => quote!((#index + #ignored_len_ident - 1, #len)),
-        _ => todo!(),
+        _ => todo!("tokens repeat"),
     });
 
     quote!(
@@ -236,7 +236,7 @@ pub fn to_tokens_permute(
                 .into_iter()
                 .collect::<Vec<_>>()
         ),
-        _ => todo!(),
+        _ => todo!("tokens permute"),
     };
 
     quote!(
@@ -330,7 +330,7 @@ pub fn to_tokens_reduce(
                 );
             )
         }
-        _ => todo!(),
+        _ => todo!("tokens reduce"),
     }
 }
 
@@ -376,7 +376,7 @@ pub fn to_tokens_decomposition(
                     ..
                 } => unknown_indices
                     .push(quote!(#shape_ident[#i + #ignored_len_ident - 1] / #shape_calc)),
-                _ => todo!(),
+                _ => todo!("tokens decomposition"),
             }
             (known_indices, ignored_indices, unknown_indices)
         },
@@ -411,7 +411,10 @@ pub fn to_tokens_decomposition(
                 .into_iter()
                 .collect::<Vec<_>>()
         ),
-        _ => todo!(),
+        (true, false, true) => quote!(
+            #ignored_indices.collect::<Vec<_>>()
+        ),
+        _ => todo!("tokens decomposition"),
     };
 
     quote!(

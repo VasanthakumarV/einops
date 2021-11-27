@@ -72,7 +72,7 @@ pub enum Operation {
 
 pub fn parse_decomposition(input: ParseStream) -> syn::Result<(Vec<Decomposition>, bool)> {
     let mut parenthesized_len = 0;
-    let (decomposition, requires_squeeze, _) = (0..)
+    let (decomposition, requires_decomposition, _) = (0..)
         .into_iter()
         .take_while(|_| {
             if input.peek(syn::Token![->]) {
@@ -87,11 +87,12 @@ pub fn parse_decomposition(input: ParseStream) -> syn::Result<(Vec<Decomposition
                 false,
                 Box::new(Index::Known) as Box<dyn Fn(usize) -> Index>,
             ),
-            |(mut decomposition, mut requires_squeeze, mut index_fn), mut i| {
+            |(mut decomposition, mut requires_decomposition, mut index_fn), mut i| {
                 i += parenthesized_len;
                 if input.peek(syn::token::Paren) {
                     let content_expression = parse_left_parenthesized(input, index_fn(i))?;
                     decomposition.extend(content_expression);
+                    requires_decomposition = true;
                 } else if peek_reduce_kw(input) {
                     let identifiers = parse_reduce_fn(input)?;
                     parenthesized_len += identifiers.len().saturating_sub(1);
@@ -131,7 +132,7 @@ pub fn parse_decomposition(input: ParseStream) -> syn::Result<(Vec<Decomposition
                             lit_int.to_string()
                         )));
                     }
-                    requires_squeeze = true;
+                    requires_decomposition = true;
                 } else if input.peek(syn::Token![..]) {
                     input.parse::<syn::Token![..]>()?;
                     decomposition.push(Decomposition::Named {
@@ -142,13 +143,13 @@ pub fn parse_decomposition(input: ParseStream) -> syn::Result<(Vec<Decomposition
                     });
                     index_fn = Box::new(Index::Unknown);
                 } else {
-                    todo!();
+                    todo!("decomposition");
                 }
-                Ok((decomposition, requires_squeeze, index_fn))
+                Ok((decomposition, requires_decomposition, index_fn))
             },
         )?;
 
-    Ok((decomposition, requires_squeeze))
+    Ok((decomposition, requires_decomposition))
 }
 
 fn parse_left_parenthesized(input: ParseStream, index: Index) -> syn::Result<Vec<Decomposition>> {
@@ -304,7 +305,7 @@ pub fn parse_composition_permute_repeat(
                     index: Index::Range(_),
                     ..
                 } => map.insert(name.clone(), Index::Range(i)),
-                _ => todo!(),
+                _ => todo!("positions"),
             };
             if let Some(_) = old_value {
                 return Err(input.error("Names are not unique in the left expression"));
@@ -357,7 +358,7 @@ pub fn parse_composition_permute_repeat(
                 );
                 index_fn = Box::new(Index::Unknown);
             } else {
-                todo!();
+                todo!("composition, permute, repeat");
             }
             Ok((composition, permute, repeat, index_fn))
         },
@@ -404,7 +405,7 @@ fn parse_right_parenthesized(
             repeat.push((index_fn(index), parse_usize(content)?));
             Ok(index_fn(index))
         } else {
-            todo!();
+            todo!("right parenthesized");
         }
     };
 
@@ -453,7 +454,7 @@ fn parse_reduce_fn(input: ParseStream) -> syn::Result<Vec<(String, Option<usize>
         input.parse::<kw::prod>()?;
         Operation::Prod
     } else {
-        todo!();
+        todo!("reduced");
     };
 
     let content;
