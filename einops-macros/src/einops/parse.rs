@@ -256,6 +256,15 @@ pub fn parse_composition_permute_repeat(
     input: ParseStream,
     decomposition: &Vec<Decomposition>,
 ) -> syn::Result<(Vec<Composition>, Vec<Index>, Vec<(Index, usize)>)> {
+    let is_ignore_reduced = decomposition.iter().any(|expression| {
+        matches!(expression, Decomposition::Named {name, operation: Some(_), ..} if name.as_str() == "..")
+    });
+    let unknown_index_fn = |i| {
+        if is_ignore_reduced {
+            return Index::Known(i);
+        }
+        Index::Unknown(i)
+    };
     let positions = decomposition
         .iter()
         .filter(|expression| {
@@ -289,7 +298,7 @@ pub fn parse_composition_permute_repeat(
                     name,
                     index: Index::Unknown(_),
                     ..
-                } => map.insert(name.clone(), Index::Unknown(i)),
+                } => map.insert(name.clone(), unknown_index_fn(i)),
                 Decomposition::Named {
                     name,
                     index: Index::Range(_),
@@ -466,6 +475,9 @@ fn parse_identifiers(content: ParseStream) -> syn::Result<Vec<(String, Option<us
         } else if content.peek(syn::Token![..]) {
             content.parse::<syn::Token![..]>()?;
             identifiers.push(("..".to_string(), None));
+        } else if content.peek(syn::LitInt) {
+            let lit_int = parse_usize(content)?;
+            identifiers.push((lit_int.to_string(), Some(lit_int)));
         }
     }
     Ok(identifiers)
@@ -477,6 +489,9 @@ fn parse_identifier(input: ParseStream) -> syn::Result<(String, Option<usize>)> 
     let shape = if input.peek(syn::Token![:]) {
         input.parse::<syn::Token![:]>()?;
         Some(parse_usize(input)?)
+    } else if input.peek(syn::Token![,]) {
+        input.parse::<syn::Token![,]>()?;
+        None
     } else {
         None
     };
