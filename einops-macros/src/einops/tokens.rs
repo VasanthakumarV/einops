@@ -367,6 +367,11 @@ pub fn to_tokens_decomposition(
                     );
                 }
                 Decomposition::Named {
+                    index: Index::Unknown(_),
+                    shape: Some(size),
+                    ..
+                } => unknown_indices.push(quote!(#size)),
+                Decomposition::Named {
                     index: Index::Unknown(i),
                     ..
                 } => unknown_indices.push(quote!(#shape_ident[#i + #ignored_len_ident - 1])),
