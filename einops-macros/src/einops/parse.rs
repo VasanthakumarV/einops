@@ -175,9 +175,14 @@ fn parse_left_parenthesized(input: ParseStream, index: Index) -> syn::Result<Vec
                             shape: Some(size),
                         });
                     } else {
+                        if derived_name.is_some() {
+                            return Err(content
+                                .error("Shape information required to complete decomposition"));
+                        }
                         derived_name = Some(name.clone());
                         derived_index = Some(i);
                     }
+                    Ok(())
                 };
                 if peek_reduce_kw(&content) {
                     parse_reduce_fn(&content)?.into_iter().try_for_each(
@@ -187,13 +192,12 @@ fn parse_left_parenthesized(input: ParseStream, index: Index) -> syn::Result<Vec
                                     "Ignore symbol '..' not allowed inside brackets on the left",
                                 ));
                             }
-                            update_values(name, shape, Some(operation));
-                            Ok(())
+                            update_values(name, shape, Some(operation))
                         },
                     )?;
                 } else if content.peek(syn::Ident) {
                     let (name, shape) = parse_identifier(&content)?;
-                    update_values(name, shape, None)
+                    update_values(name, shape, None)?
                 } else if content.peek(syn::Token![..]) {
                     return Err(
                         content.error("Ignore symbol '..' not allowed inside brackets on the left")
