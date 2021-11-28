@@ -364,6 +364,10 @@ pub fn parse_composition_permute_repeat(
         },
     )?;
 
+    if positions.len() != permute.len() {
+        return Err(input.error("Identifiers missing on the right side of the expression"));
+    }
+
     Ok((composition, permute, repeat))
 }
 

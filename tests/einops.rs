@@ -60,7 +60,7 @@ fn equivalent_reduction() {
         ("a max(b c d) e -> (e a)", "a max(..) e -> (e a)"),
         (
             "a mean(b c) d e -> d (a e)",
-            "a mean(b c) d e .. -> d (a e)"
+            "a mean(b c) d e .. -> d (a e) .."
         ),
         ("a b min(c d e) -> (a b)", ".. min(c d e) -> (..)"),
         input
