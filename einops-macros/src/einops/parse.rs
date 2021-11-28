@@ -143,7 +143,8 @@ pub fn parse_decomposition(input: ParseStream) -> syn::Result<(Vec<Decomposition
                     });
                     index_fn = Box::new(Index::Unknown);
                 } else {
-                    todo!("decomposition");
+                    return Err(input
+                        .error("Unrecognized charater found in the left side of the expression"));
                 }
                 Ok((decomposition, requires_decomposition, index_fn))
             },
@@ -257,6 +258,7 @@ pub fn parse_composition_permute_repeat(
     input: ParseStream,
     decomposition: &Vec<Decomposition>,
 ) -> syn::Result<(Vec<Composition>, Vec<Index>, Vec<(Index, usize)>)> {
+    let input_span = input.span();
     let is_ignore_reduced = decomposition.iter().any(|expression| {
         matches!(expression, Decomposition::Named {name, operation: Some(_), ..} if name.as_str() == "..")
     });
@@ -305,7 +307,7 @@ pub fn parse_composition_permute_repeat(
                     index: Index::Range(_),
                     ..
                 } => map.insert(name.clone(), Index::Range(i)),
-                _ => todo!("positions"),
+                _ => unreachable!(),
             };
             if let Some(_) = old_value {
                 return Err(input.error("Names are not unique in the left expression"));
@@ -358,14 +360,19 @@ pub fn parse_composition_permute_repeat(
                 );
                 index_fn = Box::new(Index::Unknown);
             } else {
-                todo!("composition, permute, repeat");
+                return Err(
+                    input.error("Unrecognized character on the right side of the expression")
+                );
             }
             Ok((composition, permute, repeat, index_fn))
         },
     )?;
 
     if positions.len() != permute.len() {
-        return Err(input.error("Identifiers missing on the right side of the expression"));
+        return Err(syn::Error::new(
+            input_span,
+            "Identifiers missing on the right side of the expression",
+        ));
     }
 
     Ok((composition, permute, repeat))
@@ -409,7 +416,7 @@ fn parse_right_parenthesized(
             repeat.push((index_fn(index), parse_usize(content)?));
             Ok(index_fn(index))
         } else {
-            todo!("right parenthesized");
+            return Err(input.error("Unrecognized character on the right side of the expression"));
         }
     };
 
@@ -458,7 +465,7 @@ fn parse_reduce_fn(input: ParseStream) -> syn::Result<Vec<(String, Option<usize>
         input.parse::<kw::prod>()?;
         Operation::Prod
     } else {
-        todo!("reduced");
+        unreachable!();
     };
 
     let content;
@@ -494,9 +501,6 @@ fn parse_identifier(input: ParseStream) -> syn::Result<(String, Option<usize>)> 
     let shape = if input.peek(syn::Token![:]) {
         input.parse::<syn::Token![:]>()?;
         Some(parse_usize(input)?)
-    } else if input.peek(syn::Token![,]) {
-        input.parse::<syn::Token![,]>()?;
-        None
     } else {
         None
     };
