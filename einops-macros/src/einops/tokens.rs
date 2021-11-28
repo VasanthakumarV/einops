@@ -312,7 +312,6 @@ pub fn to_tokens_reduce(
                     &#tensor_ident,
                     &mut [#(#reduce_indices),*]
                         .into_iter()
-                        .collect::<Vec<_>>()
                         .chain(#ignored_indices)
                         .zip(
                             [#(#reduce_operations),*]
