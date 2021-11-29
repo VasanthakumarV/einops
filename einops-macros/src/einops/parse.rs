@@ -52,7 +52,7 @@ impl PartialOrd for Index {
             (
                 Index::Known(i) | Index::Unknown(i) | Index::Range(i),
                 Index::Known(j) | Index::Unknown(j) | Index::Range(j),
-            ) => Some(i.cmp(&j)),
+            ) => Some(i.cmp(j)),
         }
     }
 }
@@ -151,7 +151,7 @@ pub fn parse_decomposition(input: ParseStream) -> syn::Result<(Vec<Decomposition
                         // this indicates a squeeze operation
                         return Err(input.error(format!(
                             "Literal Int {} not allowed on the left side",
-                            lit_int.to_string()
+                            lit_int
                         )));
                     }
                     // We have to reshape to squeeze the 1 sized dimension
@@ -207,7 +207,7 @@ fn parse_left_parenthesized(input: ParseStream, index: Index) -> syn::Result<Vec
                             return Err(content
                                 .error("Shape information required to complete decomposition"));
                         }
-                        derived_name = Some(name.clone());
+                        derived_name = Some(name);
                         derived_index = Some(i);
                     }
                     Ok(())
@@ -234,7 +234,7 @@ fn parse_left_parenthesized(input: ParseStream, index: Index) -> syn::Result<Vec
                     let lit_int = content.parse::<syn::LitInt>()?;
                     return Err(content.error(format!(
                         "Anonymous integer {} is not allowed inside brackets on the left",
-                        lit_int.to_string()
+                        lit_int
                     )));
                 } else {
                     return Err(content.error(
@@ -263,7 +263,7 @@ fn parse_left_parenthesized(input: ParseStream, index: Index) -> syn::Result<Vec
     Ok(content_expression)
 }
 
-pub fn parse_reduce(decomposition: &Vec<Decomposition>) -> Vec<(Index, Operation)> {
+pub fn parse_reduce(decomposition: &[Decomposition]) -> Vec<(Index, Operation)> {
     // We filter for only the dimensions that have some type of
     // operation associated with them
     decomposition
@@ -291,9 +291,10 @@ pub fn parse_reduce(decomposition: &Vec<Decomposition>) -> Vec<(Index, Operation
         .collect::<Vec<_>>()
 }
 
+#[allow(clippy::type_complexity)]
 pub fn parse_composition_permute_repeat(
     input: ParseStream,
-    decomposition: &Vec<Decomposition>,
+    decomposition: &[Decomposition],
 ) -> syn::Result<(Vec<Composition>, Vec<Index>, Vec<(Index, usize)>)> {
     // We calculate the span to report errors later
     let input_span = input.span();
@@ -353,7 +354,7 @@ pub fn parse_composition_permute_repeat(
                 } => map.insert(name.clone(), Index::Range(i)),
                 _ => unreachable!(),
             };
-            if let Some(_) = old_value {
+            if old_value.is_some() {
                 return Err(input.error("Names are not unique in the left expression"));
             }
             Ok(map)
@@ -432,6 +433,7 @@ pub fn parse_composition_permute_repeat(
     Ok((composition, permute, repeat))
 }
 
+#[allow(clippy::type_complexity)]
 fn parse_right_parenthesized(
     input: ParseStream,
     start_index: usize,
@@ -458,7 +460,7 @@ fn parse_right_parenthesized(
             *index_fn = Box::new(Index::Unknown);
             Ok(Index::Range(index))
         } else if content.peek(syn::Ident) {
-            let (name, shape) = parse_identifier(&content)?;
+            let (name, shape) = parse_identifier(content)?;
             if let Some(index) = positions.get(&name) {
                 permute.push(index.clone());
             } else {
@@ -472,7 +474,7 @@ fn parse_right_parenthesized(
             repeat.push((index_fn(index), parse_usize(content)?));
             Ok(index_fn(index))
         } else {
-            return Err(input.error("Unrecognized character on the right side of the expression"));
+            Err(input.error("Unrecognized character on the right side of the expression"))
         }
     };
 
@@ -574,5 +576,5 @@ fn parse_identifier(input: ParseStream) -> syn::Result<(String, Option<usize>)> 
 
 fn parse_usize(input: ParseStream) -> syn::Result<usize> {
     let len = input.parse::<syn::LitInt>()?;
-    Ok(len.base10_parse::<usize>()?)
+    len.base10_parse::<usize>()
 }

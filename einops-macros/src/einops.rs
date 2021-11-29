@@ -74,12 +74,12 @@ struct Expression {
 
 impl syn::parse::Parse for Expression {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let (decomposition, requires_decomposition) = parse_decomposition(&input)?;
+        let (decomposition, requires_decomposition) = parse_decomposition(input)?;
 
         let reduce = parse_reduce(&decomposition);
 
         let (composition, permute, repeat) =
-            parse_composition_permute_repeat(&input, &decomposition)?;
+            parse_composition_permute_repeat(input, &decomposition)?;
 
         Ok(Expression {
             requires_decomposition,
@@ -117,13 +117,12 @@ impl quote::ToTokens for ParsedExpression {
 
         // If needed we generate tokens for decomposing the tensor
         let decomposition_tokens = if *requires_decomposition {
-            let tokens = to_tokens_decomposition(
+            to_tokens_decomposition(
                 decomposition,
-                &tensor_ident,
+                tensor_ident,
                 &ignored_len_ident,
                 &shape_ident,
-            );
-            tokens
+            )
         } else {
             proc_macro2::TokenStream::new()
         };
@@ -153,7 +152,7 @@ impl quote::ToTokens for ParsedExpression {
             let requires_ignored_len = reduce
                 .iter()
                 .any(|(index, _)| matches!(index, Index::Range(_) | Index::Unknown(_)));
-            let tokens = to_tokens_reduce(reduce, &tensor_ident, &ignored_len_ident);
+            let tokens = to_tokens_reduce(reduce, tensor_ident, &ignored_len_ident);
             (tokens, requires_ignored_len)
         } else {
             (proc_macro2::TokenStream::new(), false)
@@ -164,7 +163,7 @@ impl quote::ToTokens for ParsedExpression {
             let requires_ignored_len = permute
                 .iter()
                 .any(|expression| matches!(expression, Index::Range(_) | Index::Unknown(_)));
-            let tokens = to_tokens_permute(permute, &tensor_ident, &ignored_len_ident);
+            let tokens = to_tokens_permute(permute, tensor_ident, &ignored_len_ident);
             (tokens, requires_ignored_len)
         } else {
             (proc_macro2::TokenStream::new(), false)
@@ -173,7 +172,7 @@ impl quote::ToTokens for ParsedExpression {
         // If needed we generate tokens for repeating the tensor
         let (repeat_tokens, repeat_ignored_len) = if !repeat.is_empty() {
             let requires_ignored_len = repeat.iter().any(|(i, _)| matches!(i, Index::Unknown(_)));
-            let tokens = to_tokens_repeat(repeat, &tensor_ident, &ignored_len_ident, &shape_ident);
+            let tokens = to_tokens_repeat(repeat, tensor_ident, &ignored_len_ident, &shape_ident);
             (tokens, requires_ignored_len)
         } else {
             (proc_macro2::TokenStream::new(), false)
@@ -194,7 +193,7 @@ impl quote::ToTokens for ParsedExpression {
                 )
             });
             let tokens =
-                to_tokens_composition(composition, &tensor_ident, &ignored_len_ident, &shape_ident);
+                to_tokens_composition(composition, tensor_ident, &ignored_len_ident, &shape_ident);
             (tokens, requires_ignored_len)
         } else {
             (proc_macro2::TokenStream::new(), false)

@@ -3,7 +3,7 @@ use crate::einops::{Composition, Decomposition, Index, Operation};
 use quote::quote;
 
 pub fn to_tokens_composition(
-    right_expression: &Vec<Composition>,
+    right_expression: &[Composition],
     tensor_ident: &syn::Ident,
     ignored_len_ident: &syn::Ident,
     shape_ident: &syn::Ident,
@@ -146,7 +146,7 @@ pub fn to_tokens_composition(
 }
 
 pub fn to_tokens_repeat(
-    repeat: &Vec<(Index, usize)>,
+    repeat: &[(Index, usize)],
     tensor_ident: &syn::Ident,
     ignored_len_ident: &syn::Ident,
     shape_ident: &syn::Ident,
@@ -166,7 +166,7 @@ pub fn to_tokens_repeat(
 }
 
 pub fn to_tokens_permute(
-    permute: &Vec<Index>,
+    permute: &[Index],
     tensor_ident: &syn::Ident,
     ignored_len_ident: &syn::Ident,
 ) -> proc_macro2::TokenStream {
@@ -245,7 +245,7 @@ pub fn to_tokens_permute(
 }
 
 pub fn to_tokens_reduce(
-    reduce: &Vec<(Index, Operation)>,
+    reduce: &[(Index, Operation)],
     tensor_ident: &syn::Ident,
     ignored_len_ident: &syn::Ident,
 ) -> proc_macro2::TokenStream {
@@ -334,7 +334,7 @@ pub fn to_tokens_reduce(
 }
 
 pub fn to_tokens_decomposition(
-    left_expression: &Vec<Decomposition>,
+    left_expression: &[Decomposition],
     tensor_ident: &syn::Ident,
     ignored_len_ident: &syn::Ident,
     shape_ident: &syn::Ident,
