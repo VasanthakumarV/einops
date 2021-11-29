@@ -1,10 +1,8 @@
 mod backend;
-mod error;
 
 pub use einops_macros::einops;
 
 pub use backend::Backend;
-pub use error::EinopsError;
 
 /// Specifies the operation used to reduce an axis
 #[derive(Copy, Clone, Debug)]

@@ -17,7 +17,6 @@ default = ["tch-bindings"]
 tch-bindings = ["tch"]
 
 [dependencies]
-thiserror = "1.0"
 tch = { version = "0.5", optional = true }
 einops-macros = { path = "einops-macros" }
 
