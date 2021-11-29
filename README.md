@@ -1,73 +1,101 @@
-![einops](https://github.com/VasanthakumarV/einops/workflows/CI/badge.svg)
-[![crates](https://img.shields.io/crates/v/einops)](https://crates.io/crates/einops)
-[![docs](https://img.shields.io/docsrs/einops)](https://docs.rs/einops)
+<!--![einops](https://github.com/VasanthakumarV/einops/workflows/CI/badge.svg)-->
+<!--[![crates](https://img.shields.io/crates/v/einops)](https://crates.io/crates/einops)-->
+<!--[![docs](https://img.shields.io/docsrs/einops)](https://docs.rs/einops)-->
+🚧This library is currently being revamped, find below examples of the new api🚧
 
-# Einops
+# einops
 
-This is a rust port of the incredible [einops](https://github.com/arogozhnikov/einops) library.
-Almost all the operations specified in its tutorial should be available, if you find any
-inconsistencies please raise a github issue.
+This library is heavily inspired by python's [einops](https://github.com/arogozhnikov/einops).
 
-_Unlike its python counterpart, caching the parsed expression has not been implemented yet. So
-when applying the same pattern multiple times, prefer_ `Rearrange::new(...)` _or_ `Rearrange::with_lengths(...)`
-_api, over the methods available through `RearrangeFn` like traits_.
+Currently [tch](https://github.com/LaurentMazare/tch-rs) is the only available backend.
 
-Flexible and powerful tensor operations for readable and reliable code.
-Currently only supports [tch](https://github.com/LaurentMazare/tch-rs).
+Difference from the python version,
 
-## Getting started
+- All code generated at compile time, avoiding the need for caching
+- One common api for rearrange, reduce and repeat operations
+- Shape and reduction operations can be directly specified in the expression
 
-Add the following to your `Cargo.toml` file,
+## Getting Started
 
-```
-[dependencies]
-einops = "*"
-```
+__Transpose__
 
-## Examples
-
-Einops provies three operations, they cover stacking, reshape, transposition,
-squeeze/unsqueeze, repeat, tile, concatenate and numerous reductions.
-
-For usage within a deep learning model look at the [examples](https://github.com/VasanthakumarV/einops/tree/main/examples) folder.
+Permute/Transpose dimensions, left side of `->` is the original state, right of `->` describes the end state
 
 ```rust
-// Tch specific imports
-use tch::{Tensor, Kind, Device};
-// Structs that provide constructor like api
-use einops::{Rearrange, Repeat, Reduce, Operation};
-// Traits required to call functions directly on the tensors
-use einops::{ReduceFn, RearrangeFn, RepeatFn};
-
-// We create a random tensor as input
-let input = Tensor::randn(&[100, 32, 64], (Kind::Float, Device::Cpu));
-
-// ------------------------------------------------------------------------
-// Rearrange operation
-let output = Rearrange::new("t b c -> b c t")?.apply(&input)?;
-assert_eq!(output.size(), vec![32, 64, 100]);
-
-// Apply rearrange operation directly on the tensor using `RearrangeFn` trait
-let output = input.rearrange("t b c -> b c t")?
-assert_eq!(output.size(), vec![32, 64, 100]);
-
-// ------------------------------------------------------------------------
-// Perform reduction on first axis
-let output = Reduce::new("t b c -> b c", Operation::Max)?.apply(&input)?;
-assert_eq!(output.size(), vec![32, 64]);
-
-// Same reduction done directly on the tensor using `ReduceFn` trait
-let output = input.reduce("t b c -> b c", Operation::Max)?;
-assert_eq!(output.size(), vec![32, 64]);
-
-// ------------------------------------------------------------------------
-// We repeat the third axis
-let output = Repeat::with_lengths("t b c -> t b c repeat", &[("repeat", 3)])?.apply(&input);
-assert_eq!(output.size(), vec![100, 32, 64, 3]);
-
-// Same as above using `RepeatFn` trait and directly specifying the `repeat` size
-// in the pattern
-let output = input.repeat("t b c -> t b c 3");
-assert_eq!(output.size(), vec![100, 32, 64, 3]);
+// (28, 28, 3) becomes (3, 28, 28)
+let output = einops!("h w c -> c h w", &input);
 ```
 
+__Composition__
+
+Combine dimensions by putting them inside a parenthesis on the right of `->`
+
+```rust
+// (10, 28, 28, 3) becomes (280, 28, 3)
+let output = einops!("b h w c -> (b h) w c", &input);
+```
+
+__Transpose + Composition__
+
+Transpose a tensor, followed by a composing two dimensions into one, in one single expression
+
+```rust
+// (10, 28, 28, 3) becomes (28, 280, 3)
+let output = einops!("b h w c -> h (b w) c", &input);
+```
+
+__Decomposition__
+
+Split a dimension into two, by specifying the details inside parenthesis on the left,
+specify the shape of the new dimensions like so `b1:2`, `b1` is a new dimension with shape 2
+
+```rust
+// (10, 28, 28, 3) becomes (2, 5, 28, 28, 3)
+let output = einops!("(b1:2 b2) h w c -> b1 b2 h w c", &input);
+```
+
+__Decomposition + Transpose + Composition__
+
+We can perform all operations discussed so far in a single expression
+
+```rust
+// (10, 28, 28, 3) becomes (56, 140 3)
+let output = einops!("b h (w w2:2) c -> (h w2) (b w) c", &input);
+```
+
+__Reduce__
+
+We can reduce axes using operations like, `sum`, `min`, `max`, `mean` and `prod`,
+if the same operations has to be performed on multiple continuous axes we can do `sum(a b c)`
+
+```rust
+// (10, 28, 28, 3) becomes (28, 28, 3)
+let output = einops!("mean(b) h w c -> h w c", &input);
+```
+
+__Decomposition + Reduce + Transpose + Composition__
+
+Single expression for combining all functionalities discussed
+
+```rust
+// (10, 28, 28, 3) becomes (14, 140, 3)
+let output = einops!("b (h max(h2:2)) (w max(w2:2)) c -> h (b w) c", &input);
+```
+
+__Repeat__
+
+We can repeat axes by specify it on the right side of `->`, it can named, or it can simply be a number
+
+```rust
+// (28, 28, 3) becomes (28, 5, 28, 3)
+let output = einops!("h w c -> h repeat:5 w c", &input);
+```
+
+__Squeeze__
+
+Squeeze axes of shape 1
+
+```rust
+// (1, 28, 28, 3) becomes (28, 28, 3)
+let output = einops!("1 h w c -> h w c")
+```
