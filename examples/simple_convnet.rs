@@ -1,22 +1,18 @@
 // To execute this example, you will have to unzip the [MNIST data files](http://yann.lecun.com/exdb/mnist/) in `data/`
-use einops::EinopsError;
-use einops::Rearrange;
+use einops::einops;
 use tch::{nn, nn::ModuleT, nn::OptimizerConfig, Device};
 
-fn simple_convnet(vs: &nn::Path) -> Result<impl ModuleT, EinopsError> {
+fn simple_convnet(vs: &nn::Path) -> Result<impl ModuleT, Box<dyn std::error::Error>> {
     Ok(nn::seq_t()
         // Input images will be of size (batch, 28*28), we explode that
         // into the required shape (batch, 1, 28, 28)
-        .add(Rearrange::with_lengths(
-            "b (1 w h) -> b 1 w h",
-            &[("w", 28), ("h", 28)],
-        )?)
+        .add_fn(|xs| einops!("b (w:28 h:28) -> b 1 w h", xs))
         .add(nn::conv2d(vs, 1, 32, 5, Default::default()))
         .add_fn(|xs| xs.max_pool2d_default(2))
         .add(nn::conv2d(vs, 32, 64, 5, Default::default()))
         .add_fn(|xs| xs.max_pool2d_default(2))
         // We flatten the tensor before the linear layer
-        .add(Rearrange::new("b c h w -> b (c h w)")?)
+        .add_fn(|xs| einops!("b c h w -> b (c h w)", xs))
         .add(nn::linear(vs, 1024, 1024, Default::default()))
         .add_fn(|xs| xs.relu())
         .add_fn_t(|xs, train| xs.dropout(0.5, train))
