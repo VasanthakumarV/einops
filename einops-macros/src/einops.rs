@@ -22,6 +22,7 @@ pub fn einops(input: proc_macro2::TokenStream) -> syn::Result<proc_macro2::Token
 #[derive(Debug)]
 struct ParsedExpression {
     tensor: syn::Ident,
+    tensor_expression: proc_macro2::TokenStream,
     expression: Expression,
 }
 
@@ -31,14 +32,23 @@ impl syn::parse::Parse for ParsedExpression {
 
         input.parse::<syn::Token![,]>()?;
 
-        // If the user passes a reference to the tensor, we parse
-        // the '&' symbol
-        if input.peek(syn::Token![&]) {
+        let (tensor_ident, tensor_tokens) = if input.peek(syn::Token![&]) {
             input.parse::<syn::Token![&]>()?;
-        }
+            let tensor_ident = input.parse::<syn::Ident>()?;
+            (
+                tensor_ident.clone(),
+                quote!(let #tensor_ident = &#tensor_ident;),
+            )
+        } else {
+            (
+                input.parse::<syn::Ident>()?,
+                proc_macro2::TokenStream::new(),
+            )
+        };
 
         Ok(Self {
-            tensor: input.parse::<syn::Ident>()?,
+            tensor: tensor_ident,
+            tensor_expression: tensor_tokens,
             expression,
         })
     }
@@ -86,6 +96,7 @@ impl quote::ToTokens for ParsedExpression {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let ParsedExpression {
             tensor: ref tensor_ident,
+            tensor_expression: ref tensor_tokens,
             ref expression,
         } = self;
         let Expression {
@@ -156,32 +167,13 @@ impl quote::ToTokens for ParsedExpression {
             composition_tokens.is_empty(),
         ];
 
-        let ignored_len_tokens = if tokens_empty.iter().all(|x| *x) {
+        let error_tokens = if tokens_empty.iter().all(|x| *x) {
             // If transformations are applied, we raise a compile time error
             quote!(compile_error!(
                 "No transformations applied, no need for einops"
             );)
         } else {
-            // If the last entry of the decomposition list has an index
-            // with unknown position, we need to calculate the length of the dimensions
-            // represented by '..'
-            match decomposition.last().unwrap() {
-                Decomposition::Named {
-                    index: Index::Unknown(i),
-                    ..
-                }
-                | Decomposition::Derived {
-                    index: Index::Unknown(i),
-                    ..
-                }
-                | Decomposition::Named {
-                    index: Index::Range(i),
-                    ..
-                } => {
-                    quote!(let #ignored_len_ident = #shape_ident.len() - #i;)
-                }
-                _ => proc_macro2::TokenStream::new(),
-            }
+            proc_macro2::TokenStream::new()
         };
 
         // We need the shape of the tensor, if either of ignored length calculation, or
@@ -228,6 +220,10 @@ impl quote::ToTokens for ParsedExpression {
         };
 
         let code = quote! {{
+            #error_tokens
+
+            #tensor_tokens
+
             #shape_tokens
 
             #ignored_len_tokens

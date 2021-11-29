@@ -141,7 +141,7 @@ pub fn to_tokens_composition(
     };
 
     quote!(
-        let #tensor_ident = einops::Backend::reshape(&#tensor_ident, &#composition_shape);
+        let #tensor_ident = einops::Backend::reshape(#tensor_ident, &#composition_shape);
     )
 }
 
@@ -160,7 +160,7 @@ pub fn to_tokens_repeat(
 
     quote!(
         let #tensor_ident = einops::Backend::add_axes(
-            &#tensor_ident, #shape_ident.len() + #n_repeats, &[#(#repeat_pos_len),*]
+            #tensor_ident, #shape_ident.len() + #n_repeats, &[#(#repeat_pos_len),*]
         );
     )
 }
@@ -240,7 +240,7 @@ pub fn to_tokens_permute(
     };
 
     quote!(
-        let #tensor_ident = einops::Backend::transpose(&#tensor_ident, &#permute_indices);
+        let #tensor_ident = einops::Backend::transpose(#tensor_ident, &#permute_indices);
     )
 }
 
@@ -299,7 +299,7 @@ pub fn to_tokens_reduce(
         (Some(ignored_indices), Some(ignored_operations), true) => {
             quote!(
                 let #tensor_ident = einops::Backend::reduce_axes_v2(
-                    &#tensor_ident,
+                    #tensor_ident,
                     &mut #ignored_indices
                         .zip(#ignored_operations)
                         .collect::<Vec<(_, _)>>()
@@ -309,7 +309,7 @@ pub fn to_tokens_reduce(
         (Some(ignored_indices), Some(ignored_operations), false) => {
             quote!(
                 let #tensor_ident = einops::Backend::reduce_axes_v2(
-                    &#tensor_ident,
+                    #tensor_ident,
                     &mut [#(#reduce_indices),*]
                         .into_iter()
                         .chain(#ignored_indices)
@@ -325,7 +325,7 @@ pub fn to_tokens_reduce(
         (None, None, false) => {
             quote!(
                 let #tensor_ident = einops::Backend::reduce_axes_v2(
-                    &#tensor_ident, &mut [#((#reduce_indices, #reduce_operations)),*]
+                    #tensor_ident, &mut [#((#reduce_indices, #reduce_operations)),*]
                 );
             )
         }
@@ -422,6 +422,6 @@ pub fn to_tokens_decomposition(
     };
 
     quote!(
-        let #tensor_ident = einops::Backend::reshape(&#tensor_ident, &#decomposition_shape);
+        let #tensor_ident = einops::Backend::reshape(#tensor_ident, &#decomposition_shape);
     )
 }
