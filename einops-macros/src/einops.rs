@@ -113,47 +113,101 @@ impl quote::ToTokens for ParsedExpression {
 
         // Variable that stores the length of dimensions ignored
         // in the expression using '..' symbol
-        let ignored_len_ident = format_ident!("{}", "ignored_len");
+        let ignored_len_ident = format_ident!("{}_{}", tensor_ident, "ignored_len");
 
         // If needed we generate tokens for decomposing the tensor
         let decomposition_tokens = if *requires_decomposition {
-            to_tokens_decomposition(
+            let tokens = to_tokens_decomposition(
                 decomposition,
                 &tensor_ident,
                 &ignored_len_ident,
                 &shape_ident,
-            )
+            );
+            tokens
         } else {
             proc_macro2::TokenStream::new()
         };
+        let last_unknown_index = decomposition
+            .last()
+            .map(|expression| match expression {
+                Decomposition::Named {
+                    index: Index::Unknown(i),
+                    ..
+                }
+                | Decomposition::Derived {
+                    index: Index::Unknown(i),
+                    ..
+                }
+                | Decomposition::Named {
+                    index: Index::Range(i),
+                    ..
+                } => Some(*i),
+                _ => None,
+            })
+            .flatten();
+        let decomposition_ignored_len =
+            !decomposition_tokens.is_empty() && last_unknown_index.is_some();
 
         // If needed we generate tokens for reducing the tensor
-        let reduce_tokens = if !reduce.is_empty() {
-            to_tokens_reduce(reduce, &tensor_ident, &ignored_len_ident)
+        let (reduce_tokens, reduce_ignored_len) = if !reduce.is_empty() {
+            let requires_ignored_len = reduce
+                .iter()
+                .any(|(index, _)| matches!(index, Index::Range(_) | Index::Unknown(_)));
+            let tokens = to_tokens_reduce(reduce, &tensor_ident, &ignored_len_ident);
+            (tokens, requires_ignored_len)
         } else {
-            proc_macro2::TokenStream::new()
+            (proc_macro2::TokenStream::new(), false)
         };
 
         // If needed we generate tokens for transposing the tensor
-        let permute_tokens = if permute.windows(2).any(|w| w[0] > w[1]) {
-            to_tokens_permute(permute, &tensor_ident, &ignored_len_ident)
+        let (permute_tokens, permute_ignored_len) = if permute.windows(2).any(|w| w[0] > w[1]) {
+            let requires_ignored_len = permute
+                .iter()
+                .any(|expression| matches!(expression, Index::Range(_) | Index::Unknown(_)));
+            let tokens = to_tokens_permute(permute, &tensor_ident, &ignored_len_ident);
+            (tokens, requires_ignored_len)
         } else {
-            proc_macro2::TokenStream::new()
+            (proc_macro2::TokenStream::new(), false)
         };
 
         // If needed we generate tokens for repeating the tensor
-        let repeat_tokens = if !repeat.is_empty() {
-            to_tokens_repeat(repeat, &tensor_ident, &ignored_len_ident, &shape_ident)
+        let (repeat_tokens, repeat_ignored_len) = if !repeat.is_empty() {
+            let requires_ignored_len = repeat.iter().any(|(i, _)| matches!(i, Index::Unknown(_)));
+            let tokens = to_tokens_repeat(repeat, &tensor_ident, &ignored_len_ident, &shape_ident);
+            (tokens, requires_ignored_len)
         } else {
-            proc_macro2::TokenStream::new()
+            (proc_macro2::TokenStream::new(), false)
         };
 
         // If needed we generate tokens for combining dimensions of the tensor
-        let composition_tokens = if composition
+        let (composition_tokens, composition_ignored_len) = if composition
             .iter()
             .any(|expression| matches!(expression, Composition::Combined { .. }))
         {
-            to_tokens_composition(composition, &tensor_ident, &ignored_len_ident, &shape_ident)
+            let requires_ignored_len = composition.iter().any(|expression| {
+                matches!(
+                    expression,
+                    Composition::Combined {
+                        from: Index::Unknown(_) | Index::Range(_),
+                        to: Some(Index::Unknown(_) | Index::Range(_)) | None
+                    } | Composition::Individual(Index::Range(_) | Index::Unknown(_))
+                )
+            });
+            let tokens =
+                to_tokens_composition(composition, &tensor_ident, &ignored_len_ident, &shape_ident);
+            (tokens, requires_ignored_len)
+        } else {
+            (proc_macro2::TokenStream::new(), false)
+        };
+
+        let ignored_len_tokens = if decomposition_ignored_len
+            || reduce_ignored_len
+            || permute_ignored_len
+            || repeat_ignored_len
+            || composition_ignored_len
+        {
+            let index = last_unknown_index.unwrap();
+            quote!(let #ignored_len_ident = #shape_ident.len() - #index;)
         } else {
             proc_macro2::TokenStream::new()
         };
@@ -209,7 +263,7 @@ impl quote::ToTokens for ParsedExpression {
         };
 
         // We have to recalculate the shape of the tensor before composition transformation
-        let composition_shape_tokens = if composition_tokens.is_empty() || 
+        let composition_shape_tokens = if composition_tokens.is_empty() ||
             // We can skip it if non of the first four transformations happen,
             // and we already have the shape slice from the ignored length calculation
             (tokens_empty.iter().take(4).all(|x| *x) && !ignored_len_tokens.is_empty())
