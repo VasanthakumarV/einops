@@ -298,7 +298,7 @@ pub fn to_tokens_reduce(
     ) {
         (Some(ignored_indices), Some(ignored_operations), true) => {
             quote!(
-                let #tensor_ident = ::einops::Backend::reduce_axes_v2(
+                let #tensor_ident = ::einops::Backend::reduce_axes(
                     #tensor_ident,
                     &mut #ignored_indices
                         .zip(#ignored_operations)
@@ -308,7 +308,7 @@ pub fn to_tokens_reduce(
         }
         (Some(ignored_indices), Some(ignored_operations), false) => {
             quote!(
-                let #tensor_ident = ::einops::Backend::reduce_axes_v2(
+                let #tensor_ident = ::einops::Backend::reduce_axes(
                     #tensor_ident,
                     &mut [#(#reduce_indices),*]
                         .into_iter()
@@ -324,7 +324,7 @@ pub fn to_tokens_reduce(
         }
         (None, None, false) => {
             quote!(
-                let #tensor_ident = ::einops::Backend::reduce_axes_v2(
+                let #tensor_ident = ::einops::Backend::reduce_axes(
                     #tensor_ident, &mut [#((#reduce_indices, #reduce_operations)),*]
                 );
             )

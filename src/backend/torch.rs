@@ -17,7 +17,7 @@ impl Backend for &Tensor {
         self.permute(&axes.iter().map(|&x| x as i64).collect::<Vec<_>>())
     }
 
-    fn reduce_axes_v2(self, axes_operations: &mut [(usize, Operation)]) -> Self::Output {
+    fn reduce_axes(self, axes_operations: &mut [(usize, Operation)]) -> Self::Output {
         let mut output = self.shallow_clone();
 
         axes_operations.sort_by_key(|(axis, _)| *axis);

@@ -8,6 +8,6 @@ pub trait Backend {
     fn shape(&self) -> Vec<usize>;
     fn reshape(self, shape: &[usize]) -> Self::Output;
     fn transpose(self, axes: &[usize]) -> Self::Output;
-    fn reduce_axes_v2(self, axes_operations: &mut [(usize, Operation)]) -> Self::Output;
+    fn reduce_axes(self, axes_operations: &mut [(usize, Operation)]) -> Self::Output;
     fn add_axes(self, naxes: usize, pos2len: &[(usize, usize)]) -> Self::Output;
 }
