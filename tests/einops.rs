@@ -2,6 +2,16 @@ use einops::{einops, Backend};
 use tch::{Device, IndexOp, Kind, Tensor};
 
 #[test]
+fn tch_layers() {
+    let input = Tensor::randn(&[10, 3, 32, 32], (Kind::Float, Device::Cpu));
+
+    let output1 = einops!("b c (h max(2)) (w max(2)) -> b c h w", &input);
+    let output2 = input.max_pool2d_default(2);
+
+    assert_eq!(output1, output2);
+}
+
+#[test]
 fn consistency_checks() {
     let input = Tensor::arange(1 * 2 * 3 * 5 * 7 * 11, (Kind::Float, Device::Cpu))
         .reshape(&[1, 2, 3, 5, 7, 11]);
