@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use syn::{parse::ParseStream, token};
 
+// Custom keywords to represent reduce operations
 mod kw {
     syn::custom_keyword!(min);
     syn::custom_keyword!(max);
@@ -12,6 +13,8 @@ mod kw {
 
 #[derive(Debug, Clone)]
 pub enum Decomposition {
+    // New decomposed dimension with no shape provided
+    // by the user
     Derived {
         name: String,
         index: Index,
@@ -29,13 +32,17 @@ pub enum Decomposition {
 #[derive(Debug)]
 pub enum Composition {
     Individual(Index),
+    // Start and end index of dimesions to be combined
+    // into one
     Combined { from: Index, to: Option<Index> },
 }
 
 #[derive(Debug, Clone)]
 pub enum Index {
     Known(usize),
+    // Position of dimension after '..' symbol
     Unknown(usize),
+    // Position of the '..' symbol
     Range(usize),
 }
 
@@ -71,10 +78,13 @@ pub enum Operation {
 }
 
 pub fn parse_decomposition(input: ParseStream) -> syn::Result<(Vec<Decomposition>, bool)> {
+    // Length of dimensions inside parenthesis,
+    // we need it to account for the dimensions skipped during the iteration
     let mut parenthesized_len = 0;
     let (decomposition, requires_decomposition, _) = (0..)
         .into_iter()
         .take_while(|_| {
+            // We parse till we reach '->'
             if input.peek(syn::Token![->]) {
                 input.parse::<syn::Token![->]>().unwrap();
                 return false;
@@ -84,10 +94,17 @@ pub fn parse_decomposition(input: ParseStream) -> syn::Result<(Vec<Decomposition
         .try_fold(
             (
                 Vec::new(),
+                // Boolean to indicate if,
+                // - dimensions are decomposed
+                // - squeezing is required
                 false,
+                // Closure that helps construct `Index`,
+                // it is updated once we hit '..' to construct `Unknown` indices
                 Box::new(Index::Known) as Box<dyn Fn(usize) -> Index>,
             ),
             |(mut decomposition, mut requires_decomposition, mut index_fn), mut i| {
+                // We account for dimensions skipped when we parse
+                // contents of parenthesized expression
                 i += parenthesized_len;
                 if input.peek(syn::token::Paren) {
                     let content_expression = parse_left_parenthesized(input, index_fn(i))?;
@@ -95,9 +112,12 @@ pub fn parse_decomposition(input: ParseStream) -> syn::Result<(Vec<Decomposition
                     requires_decomposition = true;
                 } else if peek_reduce_kw(input) {
                     let identifiers = parse_reduce_fn(input)?;
+                    // We account for dimensions skipped during reduction operations
+                    // like `sum(a b c)`, where three dimensions are reduced
                     parenthesized_len += identifiers.len().saturating_sub(1);
                     identifiers.into_iter().enumerate().for_each(
                         |(inner_index, (name, shape, operation))| {
+                            // If we encounter '..' inside reduce, we will have to update the closure
                             if name == ".." {
                                 index_fn = Box::new(Index::Unknown);
                                 decomposition.push(Decomposition::Named {
@@ -127,11 +147,14 @@ pub fn parse_decomposition(input: ParseStream) -> syn::Result<(Vec<Decomposition
                 } else if input.peek(syn::LitInt) {
                     let lit_int = input.parse::<syn::LitInt>()?;
                     if lit_int.base10_parse::<usize>()? != 1 {
+                        // '1' is the only literal int allowed on the left,
+                        // this indicates a squeeze operation
                         return Err(input.error(format!(
                             "Literal Int {} not allowed on the left side",
                             lit_int.to_string()
                         )));
                     }
+                    // We have to reshape to squeeze the 1 sized dimension
                     requires_decomposition = true;
                 } else if input.peek(syn::Token![..]) {
                     input.parse::<syn::Token![..]>()?;
@@ -141,6 +164,7 @@ pub fn parse_decomposition(input: ParseStream) -> syn::Result<(Vec<Decomposition
                         shape: None,
                         operation: None,
                     });
+                    // We update the closure as we have encountered '..'
                     index_fn = Box::new(Index::Unknown);
                 } else {
                     return Err(input
@@ -161,10 +185,13 @@ fn parse_left_parenthesized(input: ParseStream, index: Index) -> syn::Result<Vec
 
     let (derived_name, derived_index, running_mul) = (0..)
         .into_iter()
+        // We continue till we parse everything inside the parenthesis
         .take_while(|_| !content.is_empty())
         .try_fold(
             (None, None, 1),
             |(mut derived_name, mut derived_index, mut running_mul), i| {
+                // Closure to keep a running multiple of the shapes,
+                // and updating the list with new dimensions with known shape
                 let mut update_values = |name, shape, operation| {
                     if let Some(size) = shape {
                         running_mul *= size;
@@ -176,6 +203,7 @@ fn parse_left_parenthesized(input: ParseStream, index: Index) -> syn::Result<Vec
                         });
                     } else {
                         if derived_name.is_some() {
+                            // We cannot have more than one dimension with unknown shape
                             return Err(content
                                 .error("Shape information required to complete decomposition"));
                         }
@@ -217,6 +245,9 @@ fn parse_left_parenthesized(input: ParseStream, index: Index) -> syn::Result<Vec
             },
         )?;
 
+    // We add the `Derived` dimension at the end at its index,
+    // once we have the running multiple of all the other shapes
+    // inside the parenthesis
     if let Some(derived_index) = derived_index {
         content_expression.insert(
             derived_index,
@@ -233,6 +264,8 @@ fn parse_left_parenthesized(input: ParseStream, index: Index) -> syn::Result<Vec
 }
 
 pub fn parse_reduce(decomposition: &Vec<Decomposition>) -> Vec<(Index, Operation)> {
+    // We filter for only the dimensions that have some type of
+    // operation associated with them
     decomposition
         .iter()
         .cloned()
@@ -262,18 +295,25 @@ pub fn parse_composition_permute_repeat(
     input: ParseStream,
     decomposition: &Vec<Decomposition>,
 ) -> syn::Result<(Vec<Composition>, Vec<Index>, Vec<(Index, usize)>)> {
+    // We calculate the span to report errors later
     let input_span = input.span();
+    // We check if ignored dimensions are reduced
     let is_ignore_reduced = decomposition.iter().any(|expression| {
         matches!(expression, Decomposition::Named {name, operation: Some(_), ..} if name.as_str() == "..")
     });
+    // If '..' is reduced, previously unknown indices could change
+    // to known
     let unknown_index_fn = |i| {
         if is_ignore_reduced {
             return Index::Known(i);
         }
         Index::Unknown(i)
     };
+    // We create a hashmap of identifiers and their positions
+    // in the left expression
     let positions = decomposition
         .iter()
+        // We ignore all the reduced dimensions
         .filter(|expression| {
             !matches!(
                 expression,
@@ -319,6 +359,7 @@ pub fn parse_composition_permute_repeat(
             Ok(map)
         })?;
 
+    // To keep track of the dimensions skipped inside parenthesis
     let mut parenthesized_len: usize = 0;
     let (composition, permute, repeat, _) = (0..)
         .into_iter()
@@ -328,9 +369,13 @@ pub fn parse_composition_permute_repeat(
             Vec::new(),
             Vec::new(),
             Vec::new(),
+            // Closure to construct `Index`, once we encounter '..',
+            // `Known` index becomes `Unknown`
             Box::new(Index::Known) as Box<dyn Fn(usize) -> Index>,
         ),
         |(mut composition, mut permute, mut repeat, mut index_fn), mut i| {
+            // We update the iterator's index to account for dimensions skipped
+            // inside parenthesis
             i += parenthesized_len;
             if input.peek(token::Paren) {
                 let (combined, combined_permute, combined_repeat, combined_len) =
@@ -344,6 +389,7 @@ pub fn parse_composition_permute_repeat(
                 if let Some(index) = positions.get(&name) {
                     permute.push(index.clone());
                 } else {
+                    // New identifiers represents repetition
                     repeat.push((
                         index_fn(i),
                         shape.expect("New identifier on the right should have a shape"),
@@ -351,6 +397,7 @@ pub fn parse_composition_permute_repeat(
                 }
                 composition.push(Composition::Individual(index_fn(i)))
             } else if input.peek(syn::LitInt) {
+                // Literal ints represent repetition
                 repeat.push((index_fn(i), parse_usize(input)?));
                 composition.push(Composition::Individual(index_fn(i)));
             } else if input.peek(syn::Token![..]) {
@@ -362,6 +409,7 @@ pub fn parse_composition_permute_repeat(
                         .expect("Ignore should be on both sides of the expression")
                         .clone(),
                 );
+                // We update the closure
                 index_fn = Box::new(Index::Unknown);
             } else {
                 return Err(
@@ -372,6 +420,8 @@ pub fn parse_composition_permute_repeat(
         },
     )?;
 
+    // We raise an error if the right side of the expression
+    // misses a indicator from the left side
     if positions.len() != permute.len() {
         return Err(syn::Error::new(
             input_span,
@@ -394,6 +444,8 @@ fn parse_right_parenthesized(
     let mut permute = Vec::new();
     let mut repeat = Vec::new();
 
+    // Closure to parse one entry in the expression and update
+    // the relevant lists
     let mut parse_content = |content: ParseStream, index: usize| -> syn::Result<Index> {
         if content.peek(syn::Token![..]) {
             content.parse::<syn::Token![..]>()?;
@@ -424,14 +476,19 @@ fn parse_right_parenthesized(
         }
     };
 
+    // The starting index of the combined dimensions
     let from = parse_content(&content, start_index)?;
 
+    // The ending index of the combined dimension,
+    // we iterate through the entire expression to update relevant lists
     let to = ((start_index + 1)..)
         .into_iter()
         .take_while(|_| !content.is_empty())
         .fold(None, |_, i| Some(parse_content(&content, i)))
         .transpose()?;
 
+    // We calculate the length of dimesions inside this parenthesis,
+    // this helps the main loop keep track of skipped dimensions
     let len = if let Some(
         Index::Known(end_index) | Index::Unknown(end_index) | Index::Range(end_index),
     ) = to
@@ -476,6 +533,7 @@ fn parse_reduce_fn(input: ParseStream) -> syn::Result<Vec<(String, Option<usize>
     syn::parenthesized!(content in input);
 
     Ok(content
+        // A single operation call can have multiple dimensions,
         .call(parse_identifiers)?
         .into_iter()
         .map(|(name, shape)| (name, shape, operation.clone()))
@@ -494,6 +552,8 @@ fn parse_identifiers(content: ParseStream) -> syn::Result<Vec<(String, Option<us
         } else if content.peek(syn::LitInt) {
             let lit_int = parse_usize(content)?;
             identifiers.push((lit_int.to_string(), Some(lit_int)));
+        } else {
+            return Err(content.error("Unknown character introduced in the reduce operation"));
         }
     }
     Ok(identifiers)
