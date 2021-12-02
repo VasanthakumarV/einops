@@ -6,7 +6,7 @@ use syn::parse::ParseStream;
 
 use parse::{
     parse_composition_permute_repeat, parse_decomposition, parse_reduce, Composition,
-    Decomposition, Index, Operation,
+    Decomposition, Index, Operation, Shape,
 };
 use tokens::{
     to_tokens_composition, to_tokens_decomposition, to_tokens_permute, to_tokens_reduce,
@@ -67,7 +67,7 @@ struct Expression {
     // Step 3, Transposing dimensions
     permute: Vec<Index>,
     // Step 4, Tiling or repeating dimensions
-    repeat: Vec<(Index, usize)>,
+    repeat: Vec<(Index, Shape)>,
     // Step 5, Combining dimensions into a single dimension
     composition: Vec<Composition>,
 }

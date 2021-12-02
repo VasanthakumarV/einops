@@ -1,4 +1,4 @@
-use crate::einops::{Composition, Decomposition, Index, Operation};
+use crate::einops::{Composition, Decomposition, Index, Operation, Shape};
 
 use quote::quote;
 
@@ -146,16 +146,16 @@ pub fn to_tokens_composition(
 }
 
 pub fn to_tokens_repeat(
-    repeat: &[(Index, usize)],
+    repeat: &[(Index, Shape)],
     tensor_ident: &syn::Ident,
     ignored_len_ident: &syn::Ident,
     shape_ident: &syn::Ident,
 ) -> proc_macro2::TokenStream {
     let n_repeats = repeat.len();
     let repeat_pos_len = repeat.iter().map(|expression| match expression {
-        (Index::Known(index), len) => quote!((#index, #len)),
-        (Index::Unknown(index), len) => quote!((#index + #ignored_len_ident - 1, #len)),
-        _ => unreachable!(),
+        (Index::Known(index), Shape::Lit(len)) => quote!((#index, #len)),
+        (Index::Unknown(index), Shape::Lit(len)) => quote!((#index + #ignored_len_ident - 1, #len)),
+        _ => todo!("Support brace in repeat"),
     });
 
     quote!(
@@ -345,7 +345,12 @@ pub fn to_tokens_decomposition(
             match expression {
                 Decomposition::Named {
                     index: Index::Known(_),
-                    shape: Some(size),
+                    shape: Some(Shape::Lit(size)),
+                    ..
+                } => known_indices.push(quote!(#size)),
+                Decomposition::Named {
+                    index: Index::Known(_),
+                    shape: Some(Shape::Expr(size)),
                     ..
                 } => known_indices.push(quote!(#size)),
                 Decomposition::Named {
@@ -367,7 +372,12 @@ pub fn to_tokens_decomposition(
                 }
                 Decomposition::Named {
                     index: Index::Unknown(_),
-                    shape: Some(size),
+                    shape: Some(Shape::Lit(size)),
+                    ..
+                } => unknown_indices.push(quote!(#size)),
+                Decomposition::Named {
+                    index: Index::Unknown(_),
+                    shape: Some(Shape::Expr(size)),
                     ..
                 } => unknown_indices.push(quote!(#size)),
                 Decomposition::Named {

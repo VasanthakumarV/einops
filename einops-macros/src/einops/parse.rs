@@ -1,5 +1,9 @@
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
+use quote::ToTokens;
+use syn::parse::discouraged::Speculative;
 use syn::{parse::ParseStream, token};
 
 // Custom keywords to represent reduce operations
@@ -19,14 +23,20 @@ pub enum Decomposition {
         name: String,
         index: Index,
         operation: Option<Operation>,
-        shape_calc: usize,
+        shape_calc: proc_macro2::TokenStream,
     },
     Named {
         name: String,
         index: Index,
         operation: Option<Operation>,
-        shape: Option<usize>,
+        shape: Option<Shape>,
     },
+}
+
+#[derive(Debug, Clone)]
+pub enum Shape {
+    Lit(usize),
+    Expr(proc_macro2::TokenStream),
 }
 
 #[derive(Debug)]
@@ -191,18 +201,21 @@ fn parse_left_parenthesized(input: ParseStream, index: Index) -> syn::Result<Vec
 
     let mut content_expression = Vec::new();
 
-    let (derived_name, derived_index, running_mul) = (0..)
+    let (derived_name, derived_index, running_mul, shape_expr) = (0..)
         .into_iter()
         // We continue till we parse everything inside the parenthesis
         .take_while(|_| !content.is_empty())
         .try_fold(
-            (None, None, 1),
-            |(mut derived_name, mut derived_index, mut running_mul), i| {
+            (None, None, 1, Vec::new()),
+            |(mut derived_name, mut derived_index, mut running_mul, mut shape_expr), i| {
                 // Closure to keep a running multiple of the shapes,
                 // and updating the list with new dimensions with known shape
                 let mut update_values = |name, shape, operation| {
                     if let Some(size) = shape {
-                        running_mul *= size;
+                        match size {
+                            Shape::Lit(lit_size) => running_mul *= lit_size,
+                            Shape::Expr(ref expression) => shape_expr.push(expression.clone()),
+                        }
                         content_expression.push(Decomposition::Named {
                             name,
                             index: index.clone(),
@@ -244,12 +257,15 @@ fn parse_left_parenthesized(input: ParseStream, index: Index) -> syn::Result<Vec
                         "Anonymous integer {} is not allowed inside brackets on the left",
                         lit_int
                     )));
+                } else if content.peek(syn::token::Brace) {
+                    let (name, shape) = parse_braced_expression(&content)?;
+                    update_values(name, Some(shape), None)?;
                 } else {
                     return Err(content.error(
                         "Unknown character found inside the brackets of the left expression",
                     ));
                 };
-                Ok((derived_name, derived_index, running_mul))
+                Ok((derived_name, derived_index, running_mul, shape_expr))
             },
         )?;
 
@@ -263,12 +279,49 @@ fn parse_left_parenthesized(input: ParseStream, index: Index) -> syn::Result<Vec
                 name: derived_name.unwrap(),
                 index,
                 operation: None,
-                shape_calc: running_mul,
+                shape_calc: quote::quote!(
+                    (#running_mul * [#(#shape_expr),*].iter().product::<usize>())
+                ),
             },
         );
     }
 
     Ok(content_expression)
+}
+
+fn parse_braced_expression(content: ParseStream) -> syn::Result<(String, Shape)> {
+    let shape_expression;
+    syn::braced!(shape_expression in content);
+
+    let span = shape_expression.span();
+
+    let fork = shape_expression.fork();
+    let (braced_name, braced_shape) = if let Ok(field) = fork.parse::<syn::ExprField>() {
+        shape_expression.advance_to(&fork);
+        let mut hasher = DefaultHasher::new();
+        field.hash(&mut hasher);
+        (
+            hasher.finish().to_string(),
+            Shape::Expr(field.to_token_stream()),
+        )
+    } else if shape_expression.peek(syn::Ident) {
+        let ident = shape_expression.parse::<syn::Ident>()?;
+        (ident.to_string(), Shape::Expr(ident.to_token_stream()))
+    } else {
+        return Err(syn::Error::new(
+            span,
+            "Only identifiers and fields are allowed inside '{}'",
+        ));
+    };
+
+    if !shape_expression.is_empty() {
+        return Err(syn::Error::new(
+            span,
+            "Only one identifier or field is allowed inside '{}'",
+        ));
+    }
+
+    Ok((braced_name, braced_shape))
 }
 
 pub fn parse_reduce(decomposition: &[Decomposition]) -> Vec<(Index, Operation)> {
@@ -303,7 +356,7 @@ pub fn parse_reduce(decomposition: &[Decomposition]) -> Vec<(Index, Operation)> 
 pub fn parse_composition_permute_repeat(
     input: ParseStream,
     decomposition: &[Decomposition],
-) -> syn::Result<(Vec<Composition>, Vec<Index>, Vec<(Index, usize)>)> {
+) -> syn::Result<(Vec<Composition>, Vec<Index>, Vec<(Index, Shape)>)> {
     // We calculate the span to report errors later
     let input_span = input.span();
     // We check if ignored dimensions are reduced
@@ -407,7 +460,7 @@ pub fn parse_composition_permute_repeat(
                 composition.push(Composition::Individual(index_fn(i)))
             } else if input.peek(syn::LitInt) {
                 // Literal ints represent repetition
-                repeat.push((index_fn(i), parse_usize(input)?));
+                repeat.push((index_fn(i), Shape::Lit(parse_usize(input)?)));
                 composition.push(Composition::Individual(index_fn(i)));
             } else if input.peek(syn::Token![..]) {
                 input.parse::<syn::Token![..]>()?;
@@ -420,6 +473,13 @@ pub fn parse_composition_permute_repeat(
                 );
                 // We update the closure
                 index_fn = Box::new(Index::Unknown);
+            } else if input.peek(syn::token::Brace) {
+                let (name, _) = parse_braced_expression(input)?;
+                if let Some(index) = positions.get(&name) {
+                    permute.push(index.clone());
+                } else {
+                    todo!("Repeat using brace not implemented");
+                }
             } else {
                 return Err(
                     input.error("Unrecognized character on the right side of the expression")
@@ -447,7 +507,7 @@ fn parse_right_parenthesized(
     start_index: usize,
     index_fn: &mut Box<dyn Fn(usize) -> Index>,
     positions: &HashMap<String, Index>,
-) -> syn::Result<(Composition, Vec<Index>, Vec<(Index, usize)>, usize)> {
+) -> syn::Result<(Composition, Vec<Index>, Vec<(Index, Shape)>, usize)> {
     let content;
     syn::parenthesized!(content in input);
 
@@ -479,7 +539,7 @@ fn parse_right_parenthesized(
             }
             Ok(index_fn(index))
         } else if content.peek(syn::LitInt) {
-            repeat.push((index_fn(index), parse_usize(content)?));
+            repeat.push((index_fn(index), Shape::Lit(parse_usize(content)?)));
             Ok(index_fn(index))
         } else {
             Err(input.error("Unrecognized character on the right side of the expression"))
@@ -519,7 +579,7 @@ fn peek_reduce_kw(input: ParseStream) -> bool {
         | input.peek(kw::prod)
 }
 
-fn parse_reduce_fn(input: ParseStream) -> syn::Result<Vec<(String, Option<usize>, Operation)>> {
+fn parse_reduce_fn(input: ParseStream) -> syn::Result<Vec<(String, Option<Shape>, Operation)>> {
     let operation = if input.peek(kw::min) {
         input.parse::<kw::min>()?;
         Operation::Min
@@ -550,7 +610,7 @@ fn parse_reduce_fn(input: ParseStream) -> syn::Result<Vec<(String, Option<usize>
         .collect())
 }
 
-fn parse_identifiers(content: ParseStream) -> syn::Result<Vec<(String, Option<usize>)>> {
+fn parse_identifiers(content: ParseStream) -> syn::Result<Vec<(String, Option<Shape>)>> {
     let mut identifiers = Vec::new();
     while !content.is_empty() {
         if content.peek(syn::Ident) {
@@ -561,7 +621,10 @@ fn parse_identifiers(content: ParseStream) -> syn::Result<Vec<(String, Option<us
             identifiers.push(("..".to_string(), None));
         } else if content.peek(syn::LitInt) {
             let lit_int = parse_usize(content)?;
-            identifiers.push((lit_int.to_string(), Some(lit_int)));
+            identifiers.push((lit_int.to_string(), Some(Shape::Lit(lit_int))));
+        } else if content.peek(syn::token::Brace) {
+            let (name, shape) = parse_braced_expression(content)?;
+            identifiers.push((name, Some(shape)));
         } else {
             return Err(content.error("Unknown character introduced in the reduce operation"));
         }
@@ -569,12 +632,12 @@ fn parse_identifiers(content: ParseStream) -> syn::Result<Vec<(String, Option<us
     Ok(identifiers)
 }
 
-fn parse_identifier(input: ParseStream) -> syn::Result<(String, Option<usize>)> {
+fn parse_identifier(input: ParseStream) -> syn::Result<(String, Option<Shape>)> {
     let name = input.parse::<syn::Ident>()?.to_string();
 
     let shape = if input.peek(syn::Token![:]) {
         input.parse::<syn::Token![:]>()?;
-        Some(parse_usize(input)?)
+        Some(Shape::Lit(parse_usize(input)?))
     } else {
         None
     };
