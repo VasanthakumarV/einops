@@ -46,14 +46,20 @@ pub enum Index {
     Range(usize),
 }
 
-impl PartialOrd for Index {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+impl Ord for Index {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match (self, other) {
             (
                 Index::Known(i) | Index::Unknown(i) | Index::Range(i),
                 Index::Known(j) | Index::Unknown(j) | Index::Range(j),
-            ) => Some(i.cmp(j)),
+            ) => i.cmp(j),
         }
+    }
+}
+
+impl PartialOrd for Index {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -67,6 +73,8 @@ impl PartialEq for Index {
         }
     }
 }
+
+impl Eq for Index {}
 
 #[derive(Debug, Clone)]
 pub enum Operation {
