@@ -175,3 +175,32 @@ fn rearrange_reduce() {
         input
     ];
 }
+
+#[test]
+fn decomposition_variable() {
+    let input =
+        Tensor::arange(10 * 20 * 30 * 40, (Kind::Float, Device::Cpu)).reshape(&[10, 20, 30, 40]);
+
+    let d2 = 2;
+    let output1 = einops!("a b c (d1 {d2}) -> a b c d1 {d2}", &input);
+    let output2 = einops!(".. (d1 {d2}) -> .. d1 {d2}", &input);
+    assert_eq!(output1.shape(), &[10, 20, 30, 20, 2]);
+    assert_eq!(output2.shape(), &[10, 20, 30, 20, 2]);
+
+    let d2 = 2;
+    let output1 = einops!("a b c (d1 sum({d2})) -> a b c d1", &input);
+    let output2 = einops!(".. (d1 sum({d2})) -> .. d1", &input);
+    assert_eq!(output1.shape(), &[10, 20, 30, 20]);
+    assert_eq!(output2.shape(), &[10, 20, 30, 20]);
+
+    let a1 = 5;
+    let output = einops!("({a1} a2) .. -> a2 {a1} ..", &input);
+    assert_eq!(output.shape(), &[2, 5, 20, 30, 40]);
+
+    let shapes = (5, 2);
+    let output = einops!(
+        "({shapes.0} {shapes.1}) .. -> {shapes.1} {shapes.0} ..",
+        &input
+    );
+    assert_eq!(output.shape(), &[2, 5, 20, 30, 40]);
+}
