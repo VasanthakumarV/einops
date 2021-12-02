@@ -541,6 +541,14 @@ fn parse_right_parenthesized(
         } else if content.peek(syn::LitInt) {
             repeat.push((index_fn(index), Shape::Lit(parse_usize(content)?)));
             Ok(index_fn(index))
+        } else if content.peek(syn::token::Brace) {
+            let (name, shape) = parse_braced_expression(content)?;
+            if let Some(index) = positions.get(&name) {
+                permute.push(index.clone());
+            } else {
+                repeat.push((index_fn(index), shape));
+            }
+            Ok(index_fn(index))
         } else {
             Err(input.error("Unrecognized character on the right side of the expression"))
         }
