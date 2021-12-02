@@ -54,6 +54,13 @@ specify the shape of the new dimensions like so `b1:2`, `b1` is a new dimension 
 let output = einops!("(b1:2 b2) h w c -> b1 b2 h w c", &input);
 ```
 
+New axis can also be specified from variables or fields (struct and enum) using curly braces
+
+```rust
+let b1 = 2;
+let output = einops!("({b1} b2) h w c -> {b1} b2 h w c", &input);
+```
+
 __Decomposition + Transpose + Composition__
 
 We can perform all operations discussed so far in a single expression
@@ -89,6 +96,13 @@ We can repeat axes by specify it on the right side of `->`, it can named, or it 
 ```rust
 // (28, 28, 3) becomes (28, 5, 28, 3)
 let output = einops!("h w c -> h repeat:5 w c", &input);
+```
+
+Repeating axis's shape can be from a variables or a field (struct, enum)
+
+```rust
+let repeat = 5;
+let output = einops!("h w c -> h {repeat} w c", &input);
 ```
 
 __Squeeze__
