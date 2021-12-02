@@ -155,7 +155,11 @@ pub fn to_tokens_repeat(
     let repeat_pos_len = repeat.iter().map(|expression| match expression {
         (Index::Known(index), Shape::Lit(len)) => quote!((#index, #len)),
         (Index::Unknown(index), Shape::Lit(len)) => quote!((#index + #ignored_len_ident - 1, #len)),
-        _ => todo!("Support brace in repeat"),
+        (Index::Known(index), Shape::Expr(expr)) => quote!((#index, #expr)),
+        (Index::Unknown(index), Shape::Expr(expr)) => {
+            quote!((#index + #ignored_len_ident - 1, #expr))
+        }
+        _ => unreachable!(),
     });
 
     quote!(

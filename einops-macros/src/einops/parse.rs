@@ -474,11 +474,11 @@ pub fn parse_composition_permute_repeat(
                 // We update the closure
                 index_fn = Box::new(Index::Unknown);
             } else if input.peek(syn::token::Brace) {
-                let (name, _) = parse_braced_expression(input)?;
+                let (name, shape) = parse_braced_expression(input)?;
                 if let Some(index) = positions.get(&name) {
                     permute.push(index.clone());
                 } else {
-                    todo!("Repeat using brace not implemented");
+                    repeat.push((index_fn(i), shape));
                 }
             } else {
                 return Err(

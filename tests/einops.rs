@@ -203,4 +203,27 @@ fn decomposition_variable() {
         &input
     );
     assert_eq!(output.shape(), &[2, 5, 20, 30, 40]);
+
+    let shapes = (5, 2);
+    let output = einops!(
+        "({shapes.0} {shapes.1}) .. -> ({shapes.1} {shapes.0}) ..",
+        &input
+    );
+    assert_eq!(output.shape(), &[10, 20, 30, 40]);
+}
+
+#[test]
+fn repeat_variable() {
+    let input =
+        Tensor::arange(10 * 20 * 30 * 40, (Kind::Float, Device::Cpu)).reshape(&[10, 20, 30, 40]);
+
+    let repeat = 3;
+    let output1 = einops!("a b c d -> {repeat} a b c d", &input);
+    let output2 = einops!(".. -> {repeat} ..", &input);
+    assert_eq!(output1.shape(), &[3, 10, 20, 30, 40]);
+    assert_eq!(output2.shape(), &[3, 10, 20, 30, 40]);
+
+    let repeat = 3;
+    let output = einops!("a b c d -> ({repeat} a) b c d", &input);
+    assert_eq!(output.shape(), &[30, 20, 30, 40]);
 }
