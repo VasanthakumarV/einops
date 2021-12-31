@@ -16,7 +16,7 @@ tch-bindings = ["tch"]
 
 [dependencies]
 tch = { version = "0.6", optional = true }
-einops-macros = { path = "einops-macros" }
+einops-macros = { path = "einops-macros", version = "0.1.0-alpha.1" }
 
 [package.metadata.docs.rs]
 no-default-features = true
