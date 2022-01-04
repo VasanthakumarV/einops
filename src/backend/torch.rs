@@ -2,23 +2,29 @@ use tch::Tensor;
 
 use crate::backend::{Backend, Operation};
 
-impl Backend for &Tensor {
+impl<T: AsRef<Tensor>> Backend for T {
     type Output = Tensor;
 
-    fn shape(&self) -> Vec<usize> {
-        self.size().iter().map(|&x| x as usize).collect::<Vec<_>>()
+    fn shape(self) -> Vec<usize> {
+        self.as_ref()
+            .size()
+            .iter()
+            .map(|&x| x as usize)
+            .collect::<Vec<_>>()
     }
 
     fn reshape(self, shape: &[usize]) -> Self::Output {
-        self.reshape(&shape.iter().map(|&x| x as i64).collect::<Vec<_>>())
+        self.as_ref()
+            .reshape(&shape.iter().map(|&x| x as i64).collect::<Vec<_>>())
     }
 
     fn transpose(self, axes: &[usize]) -> Self::Output {
-        self.permute(&axes.iter().map(|&x| x as i64).collect::<Vec<_>>())
+        self.as_ref()
+            .permute(&axes.iter().map(|&x| x as i64).collect::<Vec<_>>())
     }
 
     fn reduce_axes(self, axes_operations: &mut [(usize, Operation)]) -> Self::Output {
-        let mut output = self.shallow_clone();
+        let mut output = self.as_ref().shallow_clone();
 
         axes_operations.sort_by_key(|(axis, _)| *axis);
 
@@ -36,7 +42,7 @@ impl Backend for &Tensor {
     }
 
     fn add_axes(self, naxes: usize, pos2len: &[(usize, usize)]) -> Self::Output {
-        let mut output = self.shallow_clone();
+        let mut output = self.as_ref().shallow_clone();
 
         let mut repeats = vec![1; naxes];
 
@@ -46,30 +52,6 @@ impl Backend for &Tensor {
         }
 
         output.repeat(&repeats)
-    }
-}
-
-impl Backend for Tensor {
-    type Output = Tensor;
-
-    fn shape(&self) -> Vec<usize> {
-        Backend::shape(&self)
-    }
-
-    fn reshape(self, shape: &[usize]) -> Self::Output {
-        Backend::reshape(&self, shape)
-    }
-
-    fn transpose(self, axes: &[usize]) -> Self::Output {
-        Backend::transpose(&self, axes)
-    }
-
-    fn reduce_axes(self, axes_operations: &mut [(usize, Operation)]) -> Self::Output {
-        Backend::reduce_axes(&self, axes_operations)
-    }
-
-    fn add_axes(self, naxes: usize, pos2len: &[(usize, usize)]) -> Self::Output {
-        Backend::add_axes(&self, naxes, pos2len)
     }
 }
 
