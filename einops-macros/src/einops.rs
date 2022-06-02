@@ -1,6 +1,7 @@
 mod parse;
 mod tokens;
 
+use proc_macro2::{Ident, Span};
 use quote::{format_ident, quote};
 use syn::parse::ParseStream;
 
@@ -32,18 +33,11 @@ impl syn::parse::Parse for ParsedExpression {
 
         input.parse::<syn::Token![,]>()?;
 
-        let (tensor_ident, tensor_tokens) = if input.peek(syn::Token![&]) {
-            input.parse::<syn::Token![&]>()?;
-            let tensor_ident = input.parse::<syn::Ident>()?;
-            (
-                tensor_ident.clone(),
-                quote!(let #tensor_ident = &#tensor_ident;),
-            )
-        } else {
-            (
-                input.parse::<syn::Ident>()?,
-                proc_macro2::TokenStream::new(),
-            )
+        let (tensor_ident, tensor_tokens) = {
+            let tensor_ident = Ident::new("input", Span::call_site());
+            let expr = input.parse::<syn::Expr>()?;
+            let tensor_tokens = quote!(let #tensor_ident = #expr;);
+            (tensor_ident, tensor_tokens)
         };
 
         Ok(Self {
