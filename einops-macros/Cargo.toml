@@ -1,6 +1,6 @@
 [package]
 name = "einops-macros"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 authors = ["VasanthakumarV <vasanth260m12@gmail.com>"]
 edition = "2021"
 description = "Simplistic API for deep learning tensor operations"

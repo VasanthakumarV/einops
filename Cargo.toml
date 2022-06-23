@@ -1,6 +1,6 @@
 [package]
 name = "einops"
-version = "0.3.0-alpha.1"
+version = "0.3.0-alpha.2"
 authors = ["VasanthakumarV <vasanth260m12@gmail.com>"]
 edition = "2021"
 description = "Simplistic API for deep learning tensor operations"
@@ -16,7 +16,7 @@ tch-bindings = ["tch"]
 
 [dependencies]
 tch = { version = "0.7", optional = true }
-einops-macros = { path = "einops-macros", version = "0.1.0-alpha.1" }
+einops-macros = { path = "einops-macros", version = "0.1.0-alpha.2" }
 
 [package.metadata.docs.rs]
 no-default-features = true
