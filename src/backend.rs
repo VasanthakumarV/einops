@@ -1,4 +1,4 @@
-#[cfg(feature = "tch-bindings")]
+#[cfg(feature = "tch")]
 mod torch;
 
 use crate::Operation;
