@@ -15,12 +15,12 @@ impl<T: AsRef<Tensor>> Backend for T {
 
     fn reshape(self, shape: &[usize]) -> Self::Output {
         self.as_ref()
-            .reshape(&shape.iter().map(|&x| x as i64).collect::<Vec<_>>())
+            .reshape(shape.iter().map(|&x| x as i64).collect::<Vec<_>>())
     }
 
     fn transpose(self, axes: &[usize]) -> Self::Output {
         self.as_ref()
-            .permute(&axes.iter().map(|&x| x as i64).collect::<Vec<_>>())
+            .permute(axes.iter().map(|&x| x as i64).collect::<Vec<_>>())
     }
 
     fn reduce_axes(self, axes_operations: &mut [(usize, Operation)]) -> Self::Output {
@@ -63,7 +63,7 @@ mod tests {
     #[test]
     fn tch_reduce() {
         let tests = vec![(
-            Tensor::of_slice(&[
+            Tensor::from_slice(&[
                 0.66984287, 0.52894678, 0.85415958, 0.17721198, 0.81804799, 0.80991797, 0.64868822,
                 0.96697902, 0.08047191, 0.46024353, 0.21955009, 0.31731976, 0.05446258, 0.39454557,
                 0.40949016, 0.21366165, 0.2357463, 0.93699481, 0.64522596, 0.4383618, 0.54871827,
@@ -71,7 +71,7 @@ mod tests {
             ])
             .reshape(&[4, 2, 3]),
             [(0, Operation::Min)],
-            Tensor::of_slice(&[
+            Tensor::from_slice(&[
                 0.05446258, 0.39454557, 0.08047191, 0.17721198, 0.01261184, 0.31731976,
             ])
             .reshape(&[2, 3]),
@@ -87,7 +87,7 @@ mod tests {
         let tests = vec![(
             Tensor::arange(2 * 3 * 4 * 5, (Kind::Float, Device::Cpu)).reshape(&[2, 3, 4, 5]),
             &[3, 0, 2, 1],
-            Tensor::of_slice(&[
+            Tensor::from_slice(&[
                 0, 20, 40, 5, 25, 45, 10, 30, 50, 15, 35, 55, 60, 80, 100, 65, 85, 105, 70, 90,
                 110, 75, 95, 115, 1, 21, 41, 6, 26, 46, 11, 31, 51, 16, 36, 56, 61, 81, 101, 66,
                 86, 106, 71, 91, 111, 76, 96, 116, 2, 22, 42, 7, 27, 47, 12, 32, 52, 17, 37, 57,
@@ -109,7 +109,7 @@ mod tests {
             Tensor::arange(1 * 2 * 3, (Kind::Float, Device::Cpu)).reshape(&[1, 2, 3]),
             5,
             &[(0, 5), (3, 3)],
-            Tensor::of_slice(&[
+            Tensor::from_slice(&[
                 0, 1, 2, 0, 1, 2, 0, 1, 2, 3, 4, 5, 3, 4, 5, 3, 4, 5, 0, 1, 2, 0, 1, 2, 0, 1, 2, 3,
                 4, 5, 3, 4, 5, 3, 4, 5, 0, 1, 2, 0, 1, 2, 0, 1, 2, 3, 4, 5, 3, 4, 5, 3, 4, 5, 0, 1,
                 2, 0, 1, 2, 0, 1, 2, 3, 4, 5, 3, 4, 5, 3, 4, 5, 0, 1, 2, 0, 1, 2, 0, 1, 2, 3, 4, 5,
