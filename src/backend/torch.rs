@@ -15,12 +15,12 @@ impl<T: AsRef<Tensor>> Backend for T {
 
     fn reshape(self, shape: &[usize]) -> Self::Output {
         self.as_ref()
-            .reshape(&shape.iter().map(|&x| x as i64).collect::<Vec<_>>())
+            .reshape(shape.iter().map(|&x| x as i64).collect::<Vec<_>>())
     }
 
     fn transpose(self, axes: &[usize]) -> Self::Output {
         self.as_ref()
-            .permute(&axes.iter().map(|&x| x as i64).collect::<Vec<_>>())
+            .permute(axes.iter().map(|&x| x as i64).collect::<Vec<_>>())
     }
 
     fn reduce_axes(self, axes_operations: &mut [(usize, Operation)]) -> Self::Output {
